@@ -183,7 +183,7 @@
 - [x] 1.7. Configure Supabase database schema (profiles, usage_log, subscriptions)
 - [x] 1.8. Set up Supabase Row Level Security policies
 - [x] 1.9. Configure Redis (Upstash) for caching (optional) *(implemented via Supabase paraphrase_cache table with 24h TTL)*
-- [ ] 1.10. Set up hosting environment (Render/Railway/Fly.io)
+- [x] 1.10. Set up hosting environment (Render/Railway/Fly.io) — deployed on Render at https://reword-ai.onrender.com
 - [ ] 1.11. Configure CI/CD pipeline (GitHub Actions)
 - [x] 1.12. Set up development environment documentation — `Docs/DEVELOPMENT.md` updated with full test setup
 
@@ -442,9 +442,9 @@
 - [ ] 9.6. Configure App Store Connect metadata
 - [ ] 9.7. Configure Google Play Console metadata
 - [x] 9.8. Set up production hosting (Dockerfile + .env template created)
-- [ ] 9.9. Configure production Supabase project
+- [x] 9.9. Configure production Supabase project — tables, RLS, functions, triggers all configured
 - [ ] 9.10. Set up production monitoring (Sentry, Uptime Robot)
-- [ ] 9.11. Deploy backend to production
+- [x] 9.11. Deploy backend to production — Render (https://reword-ai.onrender.com), health check passing
 - [ ] 9.12. Submit iOS app for review
 - [ ] 9.13. Submit Android app for review
 - [x] 9.14. Create launch checklist — `Docs/launch-checklist.md`

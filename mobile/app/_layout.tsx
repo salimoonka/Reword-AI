@@ -4,7 +4,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
@@ -43,12 +43,20 @@ export default function RootLayout() {
     themeMode === 'dark' || (themeMode === 'auto' && colorScheme === 'dark');
 
   useEffect(() => {
-    // Hide splash screen after a short delay
-    const hideSplash = async () => {
-      await SplashScreen.hideAsync();
-    };
-    hideSplash();
-  }, []);
+    // Hide splash screen only after auth state is determined
+    if (authReady) {
+      SplashScreen.hideAsync();
+
+      // Navigate to the appropriate initial screen
+      if (!isAuthenticated) {
+        router.replace('/auth/sign-in');
+      } else if (!hasCompletedOnboarding) {
+        router.replace('/onboarding/welcome');
+      } else {
+        router.replace('/(tabs)');
+      }
+    }
+  }, [authReady, isAuthenticated, hasCompletedOnboarding]);
 
   // Initialize IAP and sync subscription on mount
   useEffect(() => {
@@ -110,12 +118,38 @@ export default function RootLayout() {
       if (__DEV__) {
         console.log('[DeepLink] Received:', event.url);
       }
+
+      try {
+        const { path } = Linking.parse(event.url);
+        if (!path) return;
+
+        // Auth callbacks are handled by Supabase's onAuthStateChange — skip navigation
+        if (path.startsWith('auth/callback')) return;
+
+        // Route known deep link paths
+        if (path === 'settings') {
+          router.push('/(tabs)/settings');
+        } else if (path === 'subscription') {
+          router.push('/subscription');
+        } else if (path.startsWith('editor/')) {
+          const noteId = path.replace('editor/', '');
+          if (noteId) {
+            router.push(`/editor/${noteId}`);
+          }
+        } else if (path === 'keyboard-setup') {
+          router.push('/onboarding/enable-keyboard');
+        }
+      } catch (e) {
+        if (__DEV__) {
+          console.warn('[DeepLink] Failed to parse:', e);
+        }
+      }
     };
 
     // Listen for deep links while app is open
     const subscription = Linking.addEventListener('url', handleDeepLink);
 
-    // Check if app was opened via deep link
+    // Check if app was opened via deep link (cold start)
     Linking.getInitialURL().then((url) => {
       if (url) {
         handleDeepLink({ url });
@@ -140,13 +174,9 @@ export default function RootLayout() {
           animation: 'slide_from_right',
         }}
       >
-        {!authReady || !isAuthenticated ? (
-          <Stack.Screen name="auth" options={{ headerShown: false }} />
-        ) : !hasCompletedOnboarding ? (
-          <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-        ) : (
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        )}
+        <Stack.Screen name="auth" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="subscription/index"
           options={{

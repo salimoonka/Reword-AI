@@ -6,7 +6,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
 export type ThemeMode = 'auto' | 'dark' | 'light';
 
@@ -42,13 +41,15 @@ const initialState = {
  * Sync cloudEnabled to native shared storage for keyboard extension access
  */
 function syncCloudEnabledToNative(enabled: boolean) {
-  if (Platform.OS === 'ios') {
-    // Lazy import to avoid circular dependencies
-    import('../native/SharedStorage').then(({ SharedStorage }) => {
-      SharedStorage.setCloudEnabled(enabled).catch(() => {
-        // Silently fail — native module may not be available in dev
-      });
+  // Sync to native shared storage for keyboard extension access (both platforms)
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { SharedStorage } = require('../native/SharedStorage');
+    SharedStorage.setCloudEnabled(enabled).catch(() => {
+      // Silently fail — native module may not be available in dev
     });
+  } catch {
+    // Silently fail — native module may not be available in dev/test
   }
 }
 

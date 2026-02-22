@@ -101,19 +101,18 @@ apiClient.interceptors.response.use(
           const refreshToken = await SecureStore.getItemAsync('refresh_token');
 
           if (refreshToken) {
-            // Attempt to refresh via Supabase Edge Function
-            const response = await axios.post(
-              `${API_BASE_URL}/v1/auth/refresh`,
-              { refresh_token: refreshToken },
-              {
-                headers: {
-                  'Content-Type': 'application/json',
-                  ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {}),
-                },
-              }
-            );
+            // Refresh via Supabase client directly (no backend endpoint needed)
+            const { supabase } = await import('@/services/supabase/client');
+            const { data, error: refreshErr } = await supabase.auth.refreshSession({
+              refresh_token: refreshToken,
+            });
 
-            const { access_token, refresh_token: newRefreshToken } = response.data;
+            if (refreshErr || !data.session) {
+              throw new Error(refreshErr?.message || 'Session refresh failed');
+            }
+
+            const access_token = data.session.access_token;
+            const newRefreshToken = data.session.refresh_token;
 
             await SecureStore.setItemAsync('access_token', access_token);
             if (newRefreshToken) {

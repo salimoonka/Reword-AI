@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 
 export interface Note {
   id: string;
@@ -22,7 +23,7 @@ interface NotesState {
   getNote: (id: string) => Note | undefined;
 }
 
-const generateId = () => Math.random().toString(36).substring(2, 15);
+const generateId = () => Crypto.randomUUID();
 
 const generateTitle = (content: string): string => {
   const firstLine = content.split('\n')[0].trim();

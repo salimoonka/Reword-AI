@@ -130,12 +130,12 @@
 
 После деплоя Render выдаст URL, например:
 ```
-https://reword-ai-backend.onrender.com
+https://reword-ai.onrender.com
 ```
 
 Проверьте что backend работает:
 ```bash
-curl https://reword-ai-backend.onrender.com/health
+curl https://reword-ai.onrender.com/health
 # Ожидаемый ответ: {"status":"ok","timestamp":"...","version":"1.0.0"}
 ```
 
@@ -143,7 +143,7 @@ curl https://reword-ai-backend.onrender.com/health
 
 В файле `mobile/eas.json` production и preview профили уже настроены:
 ```json
-"EXPO_PUBLIC_API_URL": "https://reword-ai-backend.onrender.com"
+"EXPO_PUBLIC_API_URL": "https://reword-ai.onrender.com"
 ```
 
 Если URL отличается — обновите его в `eas.json` → `build.preview.env` и `build.production.env`.
