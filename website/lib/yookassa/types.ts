@@ -2,7 +2,7 @@
 
 export interface CreatePaymentRequest {
   amount: {
-    value: string; // "299.00"
+    value: string; // "149.00"
     currency: string; // "RUB"
   };
   capture: boolean; // true = auto‑capture
