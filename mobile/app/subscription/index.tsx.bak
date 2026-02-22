@@ -1,0 +1,340 @@
+/**
+ * Subscription Plans Screen
+ * PRO subscription purchase with react-native-iap
+ */
+
+import { useEffect, useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  SafeAreaView,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Platform,
+} from 'react-native';
+import { router } from 'expo-router';
+import { colors, spacing, typography } from '@/theme';
+import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
+import {
+  PRODUCT_IDS,
+  fetchSubscriptions,
+  purchaseSubscription,
+  restorePurchases,
+  getProductPrice,
+  type ProductSubscription,
+} from '@/services/iap';
+
+export default function SubscriptionScreen() {
+  const { tier } = useSubscriptionStore();
+  const [subscriptions, setSubscriptions] = useState<ProductSubscription[]>([]);
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch products on mount
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const loadProducts = async () => {
+    setIsLoading(true);
+    try {
+      const subs = await fetchSubscriptions();
+      setSubscriptions(subs);
+    } catch (error) {
+      console.error('[Subscription] Failed to load products:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Get localized price from store
+  const storeProduct = subscriptions.find(
+    (s) => s.id === PRODUCT_IDS.PRO_MONTHLY
+  );
+  const displayPrice = getProductPrice(
+    PRODUCT_IDS.PRO_MONTHLY,
+    storeProduct?.displayPrice ?? undefined
+  );
+
+  const handlePurchase = useCallback(async () => {
+    if (isPurchasing) return;
+    setIsPurchasing(true);
+
+    try {
+      await purchaseSubscription(PRODUCT_IDS.PRO_MONTHLY, subscriptions);
+      // Purchase result will be handled by the global listener in _layout.tsx
+    } catch (error: any) {
+      Alert.alert(
+        'Ошибка покупки',
+        'Не удалось оформить подписку. Попробуйте позже.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsPurchasing(false);
+    }
+  }, [isPurchasing, subscriptions]);
+
+  const handleRestore = useCallback(async () => {
+    if (isRestoring) return;
+    setIsRestoring(true);
+
+    try {
+      const result = await restorePurchases();
+
+      if (result && result.subscription.is_premium) {
+        // Store will be updated by the global listener
+        Alert.alert('Готово', 'Подписка восстановлена!', [
+          { text: 'OK', onPress: () => router.back() },
+        ]);
+      } else {
+        Alert.alert('Покупки не найдены', 'Активных подписок не обнаружено.', [
+          { text: 'OK' },
+        ]);
+      }
+    } catch (error) {
+      Alert.alert(
+        'Ошибка',
+        'Не удалось восстановить покупки. Попробуйте позже.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsRestoring(false);
+    }
+  }, [isRestoring]);
+
+  // If already PRO, show status
+  const isProUser = tier === 'pro';
+
+  const features = [
+    '✓ Неограниченные перефразы',
+    '✓ Все режимы перефраза',
+    '✓ Приоритетная обработка',
+    '✓ Без рекламы',
+  ];
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.closeButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.closeButtonText}>←</Text>
+        </TouchableOpacity>
+        <Text style={styles.title}>Reword AI PRO</Text>
+      </View>
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+        {/* Star icon */}
+        <Text style={styles.starIcon}>⭐</Text>
+
+        {/* Title */}
+        <Text style={styles.heroTitle}>Безлимитный перефраз</Text>
+
+        {/* Features card */}
+        <View style={styles.featuresCard}>
+          {features.map((feature, index) => (
+            <Text key={index} style={styles.featureItem}>
+              {feature}
+            </Text>
+          ))}
+        </View>
+
+        {isProUser ? (
+          /* Already PRO */
+          <View style={styles.activeCard}>
+            <Text style={styles.activeLabel}>Подписка активна ✓</Text>
+            <Text style={styles.activeDetails}>
+              Вы используете PRO-версию
+            </Text>
+          </View>
+        ) : (
+          /* Price card */
+          <View style={styles.priceCard}>
+            {isLoading ? (
+              <ActivityIndicator color={colors.white} size="small" />
+            ) : (
+              <>
+                <Text style={styles.priceText}>
+                  {displayPrice} / месяц
+                </Text>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* Legal */}
+        <Text style={styles.legal}>
+          Подписка автоматически продлевается каждый месяц. Отменить можно в
+          настройках {Platform.OS === 'ios' ? 'App Store' : 'Google Play'} в
+          любое время.
+        </Text>
+      </ScrollView>
+
+      {/* Footer buttons */}
+      <View style={styles.footer}>
+        {!isProUser && (
+          <TouchableOpacity
+            style={[styles.purchaseButton, isPurchasing && styles.buttonDisabled]}
+            onPress={handlePurchase}
+            activeOpacity={0.8}
+            disabled={isPurchasing || isLoading}
+          >
+            {isPurchasing ? (
+              <ActivityIndicator color={colors.white} size="small" />
+            ) : (
+              <Text style={styles.purchaseButtonText}>
+                Оформить подписку — {displayPrice}/мес
+              </Text>
+            )}
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          style={[styles.restoreButton, isRestoring && styles.buttonDisabled]}
+          onPress={handleRestore}
+          disabled={isRestoring}
+        >
+          {isRestoring ? (
+            <ActivityIndicator color={colors.text.secondary} size="small" />
+          ) : (
+            <Text style={styles.restoreButtonText}>Восстановить покупки</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background.primary,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.background.tertiary,
+  },
+  closeButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.background.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  closeButtonText: {
+    color: colors.text.primary,
+    fontSize: 18,
+  },
+  title: {
+    ...typography.h3,
+    color: colors.text.primary,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  starIcon: {
+    fontSize: 48,
+    marginBottom: spacing.md,
+    marginTop: spacing.lg,
+  },
+  heroTitle: {
+    ...typography.h2,
+    color: colors.text.primary,
+    textAlign: 'center',
+    marginBottom: spacing.xl,
+  },
+  featuresCard: {
+    backgroundColor: colors.background.secondary,
+    borderRadius: 16,
+    padding: spacing.xl,
+    width: '100%',
+    marginBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  featureItem: {
+    ...typography.body,
+    color: colors.text.primary,
+    lineHeight: 24,
+  },
+  priceCard: {
+    backgroundColor: colors.accent.primary,
+    borderRadius: 16,
+    padding: spacing.xl,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  priceText: {
+    ...typography.h2,
+    color: colors.white,
+  },
+  activeCard: {
+    backgroundColor: colors.status.success + '20',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.status.success,
+    padding: spacing.xl,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  activeLabel: {
+    ...typography.h3,
+    color: colors.status.success,
+    marginBottom: spacing.sm,
+  },
+  activeDetails: {
+    ...typography.body,
+    color: colors.text.secondary,
+  },
+  legal: {
+    ...typography.caption,
+    color: colors.text.tertiary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  footer: {
+    padding: spacing.xl,
+    gap: spacing.md,
+  },
+  purchaseButton: {
+    backgroundColor: colors.accent.primary,
+    paddingVertical: spacing.lg,
+    borderRadius: 12,
+    alignItems: 'center',
+    minHeight: 52,
+    justifyContent: 'center',
+  },
+  purchaseButtonText: {
+    ...typography.button,
+    color: colors.white,
+  },
+  restoreButton: {
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  restoreButtonText: {
+    ...typography.buttonSmall,
+    color: colors.text.secondary,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+});

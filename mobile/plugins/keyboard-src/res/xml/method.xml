@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Input Method configuration for Reword Keyboard -->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:isDefault="false">
+
+    <subtype
+        android:label="@string/subtype_ru"
+        android:imeSubtypeLocale="ru"
+        android:imeSubtypeMode="keyboard"
+        android:isAsciiCapable="false" />
+
+</input-method>

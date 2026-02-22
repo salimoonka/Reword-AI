@@ -1,0 +1,8 @@
+# Ignore everything
+*
+
+# Allow only what's needed
+!src/
+!package.json
+!package-lock.json
+!tsconfig.json

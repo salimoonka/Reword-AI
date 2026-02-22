@@ -1,0 +1,57 @@
+{
+  "cli": {
+    "version": ">= 14.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m1-medium"
+      },
+      "android": {
+        "gradleCommand": ":app:assembleDebug"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://reword-ai-backend.onrender.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wlmfsohrvcxatgnwezfy.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsbWZzb2hydmN4YXRnbndlemZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzNjExMDEsImV4cCI6MjA4NjkzNzEwMX0.SDX9qdpqz2_vX9iN5hxqCR6BYF1LbMBQ7fxak3npLUo"
+      },
+      "ios": {
+        "resourceClass": "m1-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://reword-ai-backend.onrender.com",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wlmfsohrvcxatgnwezfy.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsbWZzb2hydmN4YXRnbndlemZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzNjExMDEsImV4cCI6MjA4NjkzNzEwMX0.SDX9qdpqz2_vX9iN5hxqCR6BYF1LbMBQ7fxak3npLUo"
+      },
+      "ios": {
+        "resourceClass": "m1-medium"
+      },
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "your-apple-id@example.com",
+        "ascAppId": "your-app-store-connect-app-id"
+      },
+      "android": {
+        "serviceAccountKeyPath": "./google-service-account.json",
+        "track": "internal"
+      }
+    }
+  }
+}

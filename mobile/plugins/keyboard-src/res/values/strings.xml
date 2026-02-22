@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Reword AI</string>
+    <string name="keyboard_name">Reword Keyboard</string>
+    <string name="subtype_ru">Русский</string>
+    
+    <!-- Keyboard actions -->
+    <string name="action_check">Проверить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_confirm">Применить</string>
+    <string name="action_copy">Копировать</string>
+    <string name="action_undo">Отменить</string>
+    
+    <!-- Mode names -->
+    <string name="mode_shorten">Короче</string>
+    <string name="mode_expand">Подробнее</string>
+    <string name="mode_formal">Формально</string>
+    <string name="mode_friendly">Дружелюбно</string>
+    <string name="mode_confident">Уверенно</string>
+    <string name="mode_professional">Профессионально</string>
+    <string name="mode_colloquial">Разговорно</string>
+    <string name="mode_empathetic">Эмпатично</string>
+    
+    <!-- Messages -->
+    <string name="msg_copied">Скопировано</string>
+    <string name="msg_error">Ошибка</string>
+    <string name="msg_select_mode">Выберите стиль</string>
+    
+    <!-- Onboarding -->
+    <string name="onboarding_title">Включите клавиатуру</string>
+    <string name="onboarding_step1">Откройте Настройки → Язык и ввод</string>
+    <string name="onboarding_step2">Выберите Reword Keyboard</string>
+    <string name="onboarding_step3">Включите клавиатуру</string>
+</resources>
