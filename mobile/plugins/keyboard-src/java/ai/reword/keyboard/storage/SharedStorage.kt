@@ -164,11 +164,11 @@ class SharedStorage private constructor(context: Context) {
         set(value) = prefs.edit().putLong(Keys.SUBSCRIPTION_EXPIRY, value?.time ?: 0).apply()
     
     var dailyLimit: Int
-        get() = prefs.getInt(Keys.DAILY_LIMIT, 10) // Free tier default
+        get() = prefs.getInt(Keys.DAILY_LIMIT, 30) // Free tier default
         set(value) = prefs.edit().putInt(Keys.DAILY_LIMIT, value).apply()
     
     var remainingQuota: Int
-        get() = prefs.getInt(Keys.REMAINING_QUOTA, 10)
+        get() = prefs.getInt(Keys.REMAINING_QUOTA, 30)
         set(value) = prefs.edit().putInt(Keys.REMAINING_QUOTA, value).apply()
     
     // MARK: - Usage Stats

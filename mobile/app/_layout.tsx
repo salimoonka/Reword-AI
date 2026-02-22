@@ -129,8 +129,14 @@ export default function RootLayout() {
         const { path } = Linking.parse(event.url);
         if (!path) return;
 
-        // Auth callbacks are handled by Supabase's onAuthStateChange — skip navigation
-        if (path.startsWith('auth/callback')) return;
+        // Auth callbacks with tokens/code must reach the callback screen
+        // Do NOT skip them — they contain session data that needs to be processed
+        if (path.startsWith('auth/callback')) {
+          // If we're not already on the callback screen, navigate there
+          // The callback screen will extract tokens from the URL
+          router.push('/auth/callback' as any);
+          return;
+        }
 
         // Route known deep link paths
         if (path === 'settings') {

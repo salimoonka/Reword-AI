@@ -124,16 +124,26 @@ export default function SignInScreen() {
     setLoading(true);
     setError(null);
     try {
-      const redirectUrl = Linking.createURL('auth/callback');
+      // Use explicit scheme-based URL for production builds
+      // Linking.createURL may vary between dev/prod; force the correct deep link
+      const expoUrl = Linking.createURL('auth/callback');
+      const redirectUrl = __DEV__ ? expoUrl : 'rewordai://auth/callback';
+
+      if (__DEV__) console.log('[Auth] OAuth redirectTo:', redirectUrl);
+
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: redirectUrl,
           queryParams: { prompt: 'select_account' },
+          skipBrowserRedirect: true, // We handle opening the URL ourselves
         },
       });
       if (oauthError) throw oauthError;
-      if (data?.url) await Linking.openURL(data.url);
+      if (data?.url) {
+        // Open the OAuth URL in external browser
+        await Linking.openURL(data.url);
+      }
     } catch (err: any) {
       console.error('[Auth] Google sign-in error:', err);
       setError(err.message || 'Ошибка входа через Google. Попробуйте снова.');
@@ -154,7 +164,11 @@ export default function SignInScreen() {
     try {
       const { error: otpError } = await supabase.auth.signInWithOtp({
         email: trimmedEmail,
-        options: { shouldCreateUser: true },
+        options: {
+          shouldCreateUser: true,
+          // Do NOT set emailRedirectTo — we want a 6-digit OTP code, not a magic link.
+          // The Supabase Dashboard email template must use {{ .Token }} for this to work.
+        },
       });
       if (otpError) throw otpError;
       setStep('otp-verify');

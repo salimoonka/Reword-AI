@@ -39,7 +39,7 @@ interface SubscriptionState {
   }) => void;
 }
 
-const FREE_PARAPHRASES_LIMIT = 5;
+const FREE_PARAPHRASES_LIMIT = 30;
 
 export const useSubscriptionStore = create<SubscriptionState>()(
   persist(

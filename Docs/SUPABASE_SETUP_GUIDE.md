@@ -121,7 +121,7 @@
 | `SUPABASE_ANON_KEY` | `eyJ...` | anon key (тот же что в мобилке) |
 | `OPENROUTER_API_KEY` | `sk-or-...` | Ключ OpenRouter API |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | (по умолчанию) |
-| `FREE_PARAPHRASES_LIMIT` | `5` | Лимит бесплатных парафраз |
+| `FREE_PARAPHRASES_LIMIT` | `30` | Лимит бесплатных парафраз |
 | `RATE_LIMIT_MAX` | `100` | Запросов в минуту |
 
 > ⚠️ **Не ставьте** `REDIS_URL` если не планируете Redis-кеширование.

@@ -26,6 +26,11 @@ export interface Database {
         Insert: ParaphraseCacheInsert;
         Update: ParaphraseCacheUpdate;
       };
+      external_payments: {
+        Row: ExternalPayment;
+        Insert: Omit<ExternalPayment, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<ExternalPayment, 'id' | 'created_at'>>;
+      };
     };
     Functions: {
       get_daily_usage_count: {
@@ -97,7 +102,33 @@ export interface ProfileUpdate {
 
 export type SubscriptionStatus = 'free' | 'active' | 'expired' | 'cancelled' | 'trial';
 export type SubscriptionPlan = 'free' | 'pro_monthly' | 'pro_yearly';
-export type Store = 'apple' | 'google';
+export type Store = 'apple' | 'google' | 'external';
+
+// ============================================
+// EXTERNAL PAYMENTS
+// ============================================
+
+export interface ExternalPayment {
+  id: string;
+  user_id: string;
+  yookassa_payment_id: string;
+  yookassa_status: 'pending' | 'waiting_for_capture' | 'succeeded' | 'canceled';
+  idempotency_key: string;
+  amount_value: number;
+  amount_currency: string;
+  description: string | null;
+  plan: 'pro_monthly' | 'pro_yearly';
+  payment_method_type: string | null;
+  confirmation_type: string | null;
+  confirmation_url: string | null;
+  metadata: Record<string, unknown>;
+  webhook_received_at: string | null;
+  webhook_event: string | null;
+  processed: boolean;
+  processed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface Subscription {
   id: string;

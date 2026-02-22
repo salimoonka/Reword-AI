@@ -41,6 +41,12 @@ interface Config {
   // App Store / Google Play
   appleSharedSecret: string;
   googleServiceAccountKey: string;
+
+  // YooKassa (for webhook verification)
+  yookassa: {
+    shopId: string;
+    secretKey: string;
+  };
 }
 
 function getEnvOrDefault(key: string, defaultValue: string): string {
@@ -87,6 +93,11 @@ export const config: Config = {
 
   appleSharedSecret: getEnvOrDefault('APPLE_SHARED_SECRET', ''),
   googleServiceAccountKey: getEnvOrDefault('GOOGLE_SERVICE_ACCOUNT_KEY', ''),
+
+  yookassa: {
+    shopId: getEnvOrDefault('YOOKASSA_SHOP_ID', ''),
+    secretKey: getEnvOrDefault('YOOKASSA_SECRET_KEY', ''),
+  },
 };
 
 export default config;

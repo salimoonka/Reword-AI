@@ -74,8 +74,13 @@ const authPlugin: FastifyPluginAsync = async (fastify) => {
   fastify.decorateRequest('userEmail', undefined);
 
   fastify.addHook('preHandler', async (request: FastifyRequest, reply: FastifyReply) => {
-    // Skip auth for health and public routes
-    if (request.url === '/health' || request.url.startsWith('/health/') || request.url === '/') {
+    // Skip auth for health, public routes, and webhooks
+    if (
+      request.url === '/health' ||
+      request.url.startsWith('/health/') ||
+      request.url === '/' ||
+      request.url.startsWith('/v1/webhooks/')
+    ) {
       return;
     }
 

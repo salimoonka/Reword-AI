@@ -107,7 +107,7 @@ export async function updateSubscription(
   params: {
     status: SubscriptionStatus;
     plan: SubscriptionPlan;
-    store: 'apple' | 'google';
+    store: 'apple' | 'google' | 'external';
     storeProductId: string;
     storeTransactionId: string;
     storeOriginalTransactionId?: string;

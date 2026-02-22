@@ -5,6 +5,7 @@
 
 import { supabaseAdmin } from '../supabase/client.js';
 import logger from '../logging/logger.js';
+import { config } from '../../config.js';
 
 export interface QuotaInfo {
   userId: string;
@@ -15,11 +16,11 @@ export interface QuotaInfo {
   resetAt: Date;
 }
 
-// Quota limits from PRD
+// Quota limits — free limit sourced from config (env FREE_PARAPHRASES_LIMIT, default 30)
 const DAILY_LIMITS = {
-  free: 5,    // Free users: 5 paraphrases/day
-  pro: -1,    // Pro users: unlimited (-1 = unlimited)
-} as const;
+  free: config.freeParaphrasesLimit,  // Free users: 30 paraphrases/day (from config)
+  pro: -1,                            // Pro users: unlimited (-1 = unlimited)
+};
 
 // ─── In-memory tier + usage cache (L1) ─────────────────────────────
 // Dramatically reduces Supabase round-trips during bursts of requests
