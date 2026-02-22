@@ -37,6 +37,7 @@ export default function RootLayout() {
   const isAuthenticated = useUserStore((s) => s.isAuthenticated);
   const [authReady, setAuthReady] = useState(false);
   const iapInitialized = useRef(false);
+  const hasNavigated = useRef(false);
 
   // Determine active theme
   const isDarkMode =
@@ -46,6 +47,11 @@ export default function RootLayout() {
     // Hide splash screen only after auth state is determined
     if (authReady) {
       SplashScreen.hideAsync();
+
+      // Only perform initial navigation once — subsequent auth changes
+      // (e.g. sign-in completing) are handled by the sign-in screen itself
+      if (hasNavigated.current) return;
+      hasNavigated.current = true;
 
       // Navigate to the appropriate initial screen
       if (!isAuthenticated) {

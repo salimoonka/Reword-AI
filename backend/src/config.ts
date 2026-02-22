@@ -83,7 +83,7 @@ export const config: Config = {
     windowMs: parseInt(getEnvOrDefault('RATE_LIMIT_WINDOW_MS', '60000'), 10),
   },
 
-  freeParaphrasesLimit: parseInt(getEnvOrDefault('FREE_PARAPHRASES_LIMIT', '5'), 10),
+  freeParaphrasesLimit: parseInt(getEnvOrDefault('FREE_PARAPHRASES_LIMIT', '30'), 10),
 
   appleSharedSecret: getEnvOrDefault('APPLE_SHARED_SECRET', ''),
   googleServiceAccountKey: getEnvOrDefault('GOOGLE_SERVICE_ACCOUNT_KEY', ''),

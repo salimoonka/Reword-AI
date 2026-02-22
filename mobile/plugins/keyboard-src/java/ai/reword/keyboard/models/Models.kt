@@ -28,14 +28,14 @@ data class ParaphraseResponse(
 }
 
 data class DiffSegment(
-    @SerializedName("type") val type: DiffType,
+    @SerializedName("type") val type: DiffType?,
     @SerializedName("text") val text: String
 )
 
 enum class DiffType {
-    @SerializedName("unchanged") UNCHANGED,
-    @SerializedName("deleted") DELETED,
-    @SerializedName("inserted") INSERTED
+    @SerializedName("equal") UNCHANGED,
+    @SerializedName("delete") DELETED,
+    @SerializedName("insert") INSERTED
 }
 
 // MARK: - Internal Models

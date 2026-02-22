@@ -34,7 +34,7 @@ export default function SettingsScreen() {
   const { tier, paraphrasesUsed, paraphrasesLimit } = useSubscriptionStore();
   const { isKeyboardEnabled, hasFullAccess, isChecking, openKeyboardSettings } =
     useKeyboardStatus();
-  const { logout } = useUserStore();
+  const { logout, user, isAuthenticated } = useUserStore();
 
   const isDarkMode =
     themeMode === 'dark' || (themeMode === 'auto' && colorScheme === 'dark');
@@ -53,6 +53,78 @@ export default function SettingsScreen() {
       ]}
     >
       <ScrollView style={styles.content}>
+        {/* Account Section */}
+        <View style={styles.section}>
+          <Text
+            style={[
+              styles.sectionTitle,
+              { color: isDarkMode ? colors.text.secondary : '#666666' },
+            ]}
+          >
+            АККАУНТ
+          </Text>
+          <View
+            style={[
+              styles.accountCard,
+              {
+                backgroundColor: isDarkMode
+                  ? colors.background.secondary
+                  : '#F5F5F5',
+              },
+            ]}
+          >
+            <View style={styles.accountAvatar}>
+              <Text style={styles.accountAvatarText}>
+                {user?.email ? user.email.charAt(0).toUpperCase() : '👤'}
+              </Text>
+            </View>
+            <View style={styles.accountInfo}>
+              <Text
+                style={[
+                  styles.accountEmail,
+                  { color: isDarkMode ? colors.text.primary : '#000000' },
+                ]}
+                numberOfLines={1}
+              >
+                {user?.email || 'Гость'}
+              </Text>
+              <Text
+                style={[
+                  styles.accountStatus,
+                  { color: isDarkMode ? colors.text.tertiary : '#999999' },
+                ]}
+              >
+                {isAuthenticated ? (user?.email ? 'Авторизован' : 'Анонимный аккаунт') : 'Не авторизован'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.logoutButton,
+                { backgroundColor: isDarkMode ? 'rgba(255,59,48,0.15)' : 'rgba(255,59,48,0.1)' },
+              ]}
+              onPress={() => {
+                Alert.alert(
+                  'Выход',
+                  'Вы уверены, что хотите выйти из аккаунта?',
+                  [
+                    { text: 'Отмена', style: 'cancel' },
+                    {
+                      text: 'Выйти',
+                      style: 'destructive',
+                      onPress: () => {
+                        logout();
+                        router.replace('/auth/sign-in');
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.logoutButtonText}>Выйти</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Subscription Section */}
         <View style={styles.section}>
           <Text
@@ -361,6 +433,46 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: spacing.lg,
     borderRadius: 12,
+  },
+  accountCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.lg,
+    borderRadius: 12,
+  },
+  accountAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.accent.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: spacing.md,
+  },
+  accountAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700' as const,
+  },
+  accountInfo: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  accountEmail: {
+    ...typography.bodyMedium,
+    marginBottom: 2,
+  },
+  accountStatus: {
+    ...typography.caption,
+  },
+  logoutButton: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+  },
+  logoutButtonText: {
+    color: colors.error,
+    ...typography.buttonSmall,
   },
   subscriptionInfo: {
     flex: 1,

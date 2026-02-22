@@ -25,7 +25,7 @@ class APIService(private val context: Context) {
     private val baseURL: String
         get() {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            return prefs.getString("api_base_url", "https://wlmfsohrvcxatgnwezfy.supabase.co/functions") ?: "https://wlmfsohrvcxatgnwezfy.supabase.co/functions"
+            return prefs.getString("api_base_url", "https://reword-ai.onrender.com") ?: "https://reword-ai.onrender.com"
         }
 
     private val authToken: String?

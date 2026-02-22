@@ -152,7 +152,7 @@ class PreviewPanelView @JvmOverloads constructor(
                     b.setSpan(ForegroundColorSpan(insFg), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     b.setSpan(BackgroundColorSpan(insBg), s, e, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
-                DiffType.UNCHANGED -> {}
+                DiffType.UNCHANGED, null -> {}
             }
         }
         textView.text = b

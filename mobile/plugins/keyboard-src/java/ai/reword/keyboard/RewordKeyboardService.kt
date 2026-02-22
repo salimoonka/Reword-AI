@@ -261,7 +261,11 @@ class RewordKeyboardService :
         serviceScope.launch {
             try {
                 val result = apiService.paraphrase(text, currentMode)
-                showPreviewPanel(result)
+                if (result.outputText.isBlank()) {
+                    showToast("Пустой ответ от сервера")
+                } else {
+                    showPreviewPanel(result)
+                }
             } catch (e: Exception) {
                 showToast(e.message ?: "Ошибка")
             } finally {
@@ -305,16 +309,21 @@ class RewordKeyboardService :
     /* ═══════ Preview Panel ══════════════════════════════════ */
 
     private fun showPreviewPanel(result: ParaphraseResult) {
-        previewPanel = PreviewPanelView(this).apply {
-            setResult(result)
-            onConfirm = { text ->
-                currentInputConnection?.let { replaceText(it, text) }
-                hidePreviewPanel()
+        try {
+            previewPanel = PreviewPanelView(this).apply {
+                setResult(result)
+                onConfirm = { text ->
+                    currentInputConnection?.let { replaceText(it, text) }
+                    hidePreviewPanel()
+                }
+                onCancel = { hidePreviewPanel() }
+                onCopy = { text -> copyToClipboard(text) }
             }
-            onCancel = { hidePreviewPanel() }
-            onCopy = { text -> copyToClipboard(text) }
+            setInputView(previewPanel)
+        } catch (e: Exception) {
+            showToast("Ошибка отображения: ${e.message}")
+            hidePreviewPanel()
         }
-        setInputView(previewPanel)
     }
 
     private fun hidePreviewPanel() {
