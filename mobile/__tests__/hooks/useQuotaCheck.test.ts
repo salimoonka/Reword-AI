@@ -15,7 +15,7 @@ beforeEach(() => {
     isPremium: false,
     daysRemaining: null,
     paraphrasesUsed: 0,
-    paraphrasesLimit: 5,
+    paraphrasesLimit: 30,
     quotaResetAt: null,
     isSyncing: false,
   });
@@ -23,11 +23,11 @@ beforeEach(() => {
 
 describe('useQuotaCheck', () => {
   it('should allow quota check for free user with remaining quota', () => {
-    useSubscriptionStore.setState({ paraphrasesUsed: 2, paraphrasesLimit: 5 });
+    useSubscriptionStore.setState({ paraphrasesUsed: 2, paraphrasesLimit: 30 });
 
     const { result } = renderHook(() => useQuotaCheck());
 
-    expect(result.current.remaining).toBe(3);
+    expect(result.current.remaining).toBe(28);
     expect(result.current.isQuotaExceeded).toBe(false);
     expect(result.current.isUnlimited).toBe(false);
 
@@ -40,7 +40,7 @@ describe('useQuotaCheck', () => {
   });
 
   it('should block and show modal when quota exceeded', () => {
-    useSubscriptionStore.setState({ paraphrasesUsed: 5, paraphrasesLimit: 5 });
+    useSubscriptionStore.setState({ paraphrasesUsed: 30, paraphrasesLimit: 30 });
 
     const { result } = renderHook(() => useQuotaCheck());
 
@@ -56,7 +56,7 @@ describe('useQuotaCheck', () => {
   });
 
   it('should dismiss quota modal', () => {
-    useSubscriptionStore.setState({ paraphrasesUsed: 5, paraphrasesLimit: 5 });
+    useSubscriptionStore.setState({ paraphrasesUsed: 30, paraphrasesLimit: 30 });
 
     const { result } = renderHook(() => useQuotaCheck());
 
@@ -93,7 +93,7 @@ describe('useQuotaCheck', () => {
   });
 
   it('should report remaining as 0 when over limit', () => {
-    useSubscriptionStore.setState({ paraphrasesUsed: 7, paraphrasesLimit: 5 });
+    useSubscriptionStore.setState({ paraphrasesUsed: 31, paraphrasesLimit: 30 });
 
     const { result } = renderHook(() => useQuotaCheck());
     expect(result.current.remaining).toBe(0);

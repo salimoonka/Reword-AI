@@ -24,7 +24,10 @@ function getOrigin(request: NextRequest): string {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
-  const redirect = searchParams.get('redirect') || '/subscribe';
+  const fromApp = searchParams.get('from_app') === 'true';
+  const redirect = fromApp
+    ? '/auth/app-complete'
+    : searchParams.get('redirect') || '/subscribe';
   const origin = getOrigin(request);
 
   if (code) {
@@ -34,6 +37,20 @@ export async function GET(request: NextRequest) {
     if (!error) {
       return NextResponse.redirect(`${origin}${redirect}`);
     }
+
+    // If code exchange fails but the request came from the mobile app,
+    // still show the success page — the app-side session may have been
+    // established via onAuthStateChange independently.
+    if (fromApp) {
+      return NextResponse.redirect(`${origin}/auth/app-complete`);
+    }
+  }
+
+  // If there's no code but user came from the mobile app, the auth may
+  // have used the implicit flow (tokens in hash fragment, not visible
+  // on the server). Show the success page.
+  if (fromApp) {
+    return NextResponse.redirect(`${origin}/auth/app-complete`);
   }
 
   // Error — redirect to sign in

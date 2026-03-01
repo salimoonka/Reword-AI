@@ -15,8 +15,15 @@ let _initialized = false;
 /**
  * Sync a Supabase session's tokens into SecureStore + useUserStore.
  * This keeps the existing API client interceptor and native keyboard in sync.
+ * Optionally pass userMetadata to extract Google profile data (name, avatar).
  */
-export async function syncSession(accessToken: string | null, refreshToken: string | null, userId?: string, email?: string) {
+export async function syncSession(
+  accessToken: string | null,
+  refreshToken: string | null,
+  userId?: string,
+  email?: string,
+  userMetadata?: Record<string, any>,
+) {
   // Persist to SecureStore for the Axios request interceptor
   if (accessToken) {
     await SecureStore.setItemAsync('access_token', accessToken);
@@ -37,6 +44,15 @@ export async function syncSession(accessToken: string | null, refreshToken: stri
     store.setUser({
       id: userId,
       email: email,
+      displayName:
+        userMetadata?.full_name ||
+        userMetadata?.name ||
+        userMetadata?.user_name ||
+        undefined,
+      avatarUrl:
+        userMetadata?.avatar_url ||
+        userMetadata?.picture ||
+        undefined,
       createdAt: new Date().toISOString(),
     });
   }
@@ -95,6 +111,7 @@ export async function initAuth(): Promise<void> {
         session.refresh_token,
         session.user?.id,
         session.user?.email ?? undefined,
+        session.user?.user_metadata,
       );
       if (__DEV__) {
         console.log('[Auth] Restored session for user', session.user?.id, session.user?.email);
@@ -116,6 +133,7 @@ export async function initAuth(): Promise<void> {
           session.refresh_token,
           session.user?.id,
           session.user?.email ?? undefined,
+          session.user?.user_metadata,
         );
       } else {
         await syncSession(null, null);

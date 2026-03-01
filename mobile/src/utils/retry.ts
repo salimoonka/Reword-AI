@@ -48,6 +48,11 @@ function calculateDelay(attempt: number, config: RetryConfig): number {
  * Check if an error is retryable based on its HTTP status or nature
  */
 export function isRetryableError(error: unknown, config: RetryConfig): boolean {
+  // AppError with retryable flag (e.g. TIMEOUT, NETWORK_ERROR, 5xx)
+  if (error && typeof error === 'object' && 'retryable' in error && (error as { retryable: boolean }).retryable) {
+    return true;
+  }
+
   // Network errors (no response) are always retryable
   if (error && typeof error === 'object' && 'code' in error) {
     const code = (error as { code?: string }).code;
@@ -59,6 +64,14 @@ export function isRetryableError(error: unknown, config: RetryConfig): boolean {
   // Check HTTP status codes
   if (error && typeof error === 'object' && 'response' in error) {
     const status = (error as { response?: { status?: number } }).response?.status;
+    if (status && config.retryableStatuses.includes(status)) {
+      return true;
+    }
+  }
+
+  // Also check statusCode on AppError objects
+  if (error && typeof error === 'object' && 'statusCode' in error) {
+    const status = (error as { statusCode?: number }).statusCode;
     if (status && config.retryableStatuses.includes(status)) {
       return true;
     }

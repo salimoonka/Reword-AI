@@ -2040,8 +2040,8 @@ npm run dev
 
 **ВАЖНО**: В текущем коде есть конфликт:
 - `backend/src/config.ts`: `freeParaphrasesLimit: 30`
-- `backend/src/services/quota/service.ts`: `DAILY_LIMITS.free = 5`
-- `mobile/src/stores/useSubscriptionStore.ts`: `FREE_PARAPHRASES_LIMIT = 5`
+- `backend/src/services/quota/service.ts`: `DAILY_LIMITS.free = 30`
+- `mobile/src/stores/useSubscriptionStore.ts`: `FREE_PARAPHRASES_LIMIT = 30`
 
 **Решение**: привести всё к единому значению через `config.ts`:
 

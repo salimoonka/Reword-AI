@@ -216,7 +216,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Function to get user's remaining quota
-CREATE OR REPLACE FUNCTION get_remaining_quota(p_user_id UUID, p_daily_limit INTEGER DEFAULT 5)
+CREATE OR REPLACE FUNCTION get_remaining_quota(p_user_id UUID, p_daily_limit INTEGER DEFAULT 30)
 RETURNS INTEGER AS $$
 DECLARE
     is_premium BOOLEAN;

@@ -1,6 +1,7 @@
 /**
  * Full Access Screen
  * Explanation of Full Access and privacy
+ * Always uses dark theme for a premium onboarding experience
  */
 
 import {
@@ -13,10 +14,16 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useSettingsStore } from '@/stores/useSettingsStore';
-import { colors, spacing, typography } from '@/theme';
+import { spacing, typography } from '@/theme';
+import { darkColors } from '@/theme/colors';
+import { useMemo } from 'react';
+import type { Colors } from '@/theme';
 
 export default function FullAccessScreen() {
   const { setHasCompletedOnboarding, setCloudEnabled } = useSettingsStore();
+  // Onboarding always uses dark theme
+  const c = darkColors;
+  const s = useMemo(() => makeStyles(c), [c]);
 
   const handleComplete = (enableCloud: boolean) => {
     setCloudEnabled(enableCloud);
@@ -25,23 +32,23 @@ export default function FullAccessScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <View style={styles.iconContainer}>
-            <Text style={styles.icon}>🔒</Text>
+    <SafeAreaView style={s.container}>
+      <ScrollView style={s.scroll} contentContainerStyle={s.content}>
+        <View style={s.header}>
+          <View style={s.iconContainer}>
+            <Text style={s.icon}>🔒</Text>
           </View>
-          <Text style={styles.title}>Полный доступ</Text>
-          <Text style={styles.subtitle}>
+          <Text style={s.title}>Полный доступ</Text>
+          <Text style={s.subtitle}>
             Для работы AI-перефразирования нужен «Полный доступ»
           </Text>
         </View>
 
         {/* Why Full Access */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Зачем нужен полный доступ?</Text>
-          <View style={styles.card}>
-            <Text style={styles.cardText}>
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Зачем нужен полный доступ?</Text>
+          <View style={s.card}>
+            <Text style={s.cardText}>
               Полный доступ позволяет клавиатуре отправлять текст на наши серверы
               для AI-перефразирования. Без него доступна только локальная проверка
               орфографии.
@@ -50,50 +57,35 @@ export default function FullAccessScreen() {
         </View>
 
         {/* Privacy promises */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Наши обещания по приватности</Text>
-          
-          <PrivacyItem
-            emoji="✅"
-            text="Тексты отправляются только при нажатии «Перефразировать»"
-          />
-          <PrivacyItem
-            emoji="✅"
-            text="Мы НЕ храним ваши тексты на серверах"
-          />
-          <PrivacyItem
-            emoji="✅"
-            text="Персональные данные (телефоны, email) маскируются"
-          />
-          <PrivacyItem
-            emoji="✅"
-            text="Вы можете удалить все данные в настройках"
-          />
-          <PrivacyItem
-            emoji="✅"
-            text="Локальная проверка работает без интернета"
-          />
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>Наши обещания по приватности</Text>
+
+          <PrivacyItem c={c} emoji="✅" text="Тексты отправляются только при нажатии «Перефразировать»" />
+          <PrivacyItem c={c} emoji="✅" text="Мы НЕ храним ваши тексты на серверах" />
+          <PrivacyItem c={c} emoji="✅" text="Персональные данные (телефоны, email) маскируются" />
+          <PrivacyItem c={c} emoji="✅" text="Вы можете удалить все данные в настройках" />
+          <PrivacyItem c={c} emoji="✅" text="Локальная проверка работает без интернета" />
         </View>
       </ScrollView>
 
       {/* Buttons */}
-      <View style={styles.buttons}>
+      <View style={s.buttons}>
         <TouchableOpacity
-          style={styles.primaryButton}
+          style={s.primaryButton}
           onPress={() => handleComplete(true)}
           activeOpacity={0.8}
         >
-          <Text style={styles.primaryButtonText}>
+          <Text style={s.primaryButtonText}>
             Включить облачные функции
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.secondaryButton}
+          style={s.secondaryButton}
           onPress={() => handleComplete(false)}
           activeOpacity={0.8}
         >
-          <Text style={styles.secondaryButtonText}>
+          <Text style={s.secondaryButtonText}>
             Только локальная проверка
           </Text>
         </TouchableOpacity>
@@ -102,108 +94,112 @@ export default function FullAccessScreen() {
   );
 }
 
-function PrivacyItem({ emoji, text }: { emoji: string; text: string }) {
+function PrivacyItem({ c, emoji, text }: { c: Colors; emoji: string; text: string }) {
   return (
-    <View style={styles.privacyItem}>
-      <Text style={styles.privacyEmoji}>{emoji}</Text>
-      <Text style={styles.privacyText}>{text}</Text>
+    <View style={privacyStyles.item}>
+      <Text style={privacyStyles.emoji}>{emoji}</Text>
+      <Text style={[privacyStyles.text, { color: c.text.primary }]}>{text}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background.primary,
-  },
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing.xl,
-    paddingBottom: spacing.lg,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: spacing.xxl,
-  },
-  iconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.background.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.lg,
-  },
-  icon: {
-    fontSize: 40,
-  },
-  title: {
-    ...typography.h2,
-    color: colors.text.primary,
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.text.secondary,
-    textAlign: 'center',
-  },
-  section: {
-    marginBottom: spacing.xl,
-  },
-  sectionTitle: {
-    ...typography.bodyMedium,
-    color: colors.text.primary,
-    marginBottom: spacing.md,
-  },
-  card: {
-    backgroundColor: colors.background.secondary,
-    padding: spacing.lg,
-    borderRadius: 12,
-  },
-  cardText: {
-    ...typography.body,
-    color: colors.text.secondary,
-    lineHeight: 24,
-  },
-  privacyItem: {
+const privacyStyles = StyleSheet.create({
+  item: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginBottom: spacing.md,
   },
-  privacyEmoji: {
+  emoji: {
     fontSize: 16,
     marginRight: spacing.md,
     marginTop: 2,
   },
-  privacyText: {
+  text: {
     ...typography.body,
-    color: colors.text.primary,
     flex: 1,
   },
-  buttons: {
-    padding: spacing.xl,
-    gap: spacing.md,
-  },
-  primaryButton: {
-    backgroundColor: colors.accent.primary,
-    paddingVertical: spacing.lg,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    ...typography.button,
-    color: colors.white,
-  },
-  secondaryButton: {
-    backgroundColor: colors.background.secondary,
-    paddingVertical: spacing.lg,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    ...typography.button,
-    color: colors.text.primary,
-  },
 });
+
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.background.primary,
+    },
+    scroll: {
+      flex: 1,
+    },
+    content: {
+      padding: spacing.xl,
+      paddingBottom: spacing.lg,
+    },
+    header: {
+      alignItems: 'center',
+      marginBottom: spacing.xxl,
+    },
+    iconContainer: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: c.background.secondary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.lg,
+    },
+    icon: {
+      fontSize: 40,
+    },
+    title: {
+      ...typography.h2,
+      color: c.text.primary,
+      marginBottom: spacing.sm,
+    },
+    subtitle: {
+      ...typography.body,
+      color: c.text.secondary,
+      textAlign: 'center',
+    },
+    section: {
+      marginBottom: spacing.xl,
+    },
+    sectionTitle: {
+      ...typography.bodyMedium,
+      color: c.text.primary,
+      marginBottom: spacing.md,
+    },
+    card: {
+      backgroundColor: c.background.secondary,
+      padding: spacing.lg,
+      borderRadius: 12,
+    },
+    cardText: {
+      ...typography.body,
+      color: c.text.secondary,
+      lineHeight: 24,
+    },
+    buttons: {
+      padding: spacing.xl,
+      gap: spacing.md,
+    },
+    primaryButton: {
+      backgroundColor: c.accent.primary,
+      paddingVertical: spacing.lg,
+      borderRadius: 12,
+      alignItems: 'center',
+    },
+    primaryButtonText: {
+      ...typography.button,
+      color: c.white,
+    },
+    secondaryButton: {
+      backgroundColor: c.background.secondary,
+      paddingVertical: spacing.lg,
+      borderRadius: 12,
+      alignItems: 'center',
+    },
+    secondaryButtonText: {
+      ...typography.button,
+      color: c.text.primary,
+    },
+  });
+}

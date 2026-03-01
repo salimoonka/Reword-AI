@@ -1,20 +1,17 @@
 /**
- * OAuth Callback Route
+ * OAuth Callback Route (fallback)
  *
- * Handles the redirect from Supabase OAuth (rewordai://auth/callback).
+ * Primary OAuth flow now uses WebBrowser.openAuthSessionAsync() in sign-in.tsx,
+ * which returns the redirect URL directly without needing deep link handling.
  *
- * Supabase OAuth implicit flow redirects here with tokens in the URL fragment:
- *   rewordai://auth/callback#access_token=xxx&refresh_token=xxx&...
- *
- * PKCE flow redirects with a code parameter:
- *   rewordai://auth/callback?code=xxx
- *
- * This screen extracts those tokens, sets the Supabase session, then navigates.
+ * This screen exists as a fallback for edge cases where a deep link might
+ * arrive directly (e.g., from external browser or magic link click).
+ * It extracts tokens from the URL and sets the Supabase session.
  */
 
 import { useEffect, useRef } from 'react';
 import { View, Text, ActivityIndicator, StyleSheet, useColorScheme } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { supabase } from '@/services/supabase/client';
 import { syncSession } from '@/services/supabase/auth';
@@ -22,7 +19,7 @@ import { useUserStore } from '@/stores/useUserStore';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { colors } from '@/theme/colors';
 
-const AUTH_TIMEOUT_MS = 15_000; // 15 seconds max wait
+const AUTH_TIMEOUT_MS = 10_000; // 10 seconds max wait
 
 /**
  * Parse tokens from a URL hash fragment (#access_token=...&refresh_token=...)

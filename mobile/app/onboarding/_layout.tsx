@@ -1,9 +1,10 @@
 /**
  * Onboarding Layout - Expo Router
+ * Always uses the dark theme for a consistent premium feel.
  */
 
 import { Stack } from 'expo-router';
-import { colors } from '@/theme/colors';
+import { darkColors } from '@/theme/colors';
 
 export default function OnboardingLayout() {
   return (
@@ -11,7 +12,7 @@ export default function OnboardingLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: {
-          backgroundColor: colors.background.primary,
+          backgroundColor: darkColors.background.primary,
         },
         animation: 'slide_from_right',
       }}

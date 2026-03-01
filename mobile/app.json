@@ -37,7 +37,13 @@
       "expo-router",
       "expo-secure-store",
       "expo-font",
-      "./plugins/withAndroidKeyboard"
+      "./plugins/withAndroidKeyboard",
+      [
+        "expo-web-browser",
+        {
+          "experimentalLauncherActivity": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

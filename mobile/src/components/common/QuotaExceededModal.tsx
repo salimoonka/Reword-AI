@@ -40,7 +40,7 @@ export function QuotaExceededModal({ visible, onDismiss }: QuotaExceededModalPro
               <Text style={styles.icon}>⚠️</Text>
               <Text style={styles.title}>Лимит исчерпан</Text>
               <Text style={styles.description}>
-                Вы использовали все бесплатные перефразирования за сегодня.
+                Вы использовали все бесплатные токены за сегодня.
               </Text>
 
               <TouchableOpacity

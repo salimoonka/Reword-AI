@@ -33,13 +33,26 @@ const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 // Create Axios instance
 export const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // 60 seconds timeout for LLM calls
+  timeout: 90000, // 90 seconds timeout (Render free tier cold starts ~30-50s)
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
     ...(SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : {}),
   },
 });
+
+/**
+ * Wake up the backend (Render free tier spins down after inactivity).
+ * Call this early in the app lifecycle so the first real request is fast.
+ */
+export async function warmUpBackend(): Promise<void> {
+  try {
+    await axios.get(`${API_BASE_URL}/health`, { timeout: 60000 });
+    if (IS_DEV) console.log('[API Client] Backend warm-up ping OK');
+  } catch {
+    if (IS_DEV) console.log('[API Client] Backend warm-up ping failed (will retry on demand)');
+  }
+}
 
 // Request interceptor - add auth token
 apiClient.interceptors.request.use(

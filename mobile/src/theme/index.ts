@@ -2,7 +2,7 @@
  * Theme exports for Reword AI
  */
 
-export { colors } from './colors';
+export { colors, darkColors, lightColors, getThemeColors } from './colors';
 export { typography } from './typography';
 export { spacing, borderRadius } from './spacing';
 

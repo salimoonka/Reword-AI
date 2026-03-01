@@ -149,7 +149,19 @@ class RewordKeyboardService :
             // Delete selection
             ic.commitText("", 1)
         } else {
-            ic.deleteSurroundingText(1, 0)
+            // Use BreakIterator to handle emoji/surrogate pairs correctly
+            // (avoids showing "?" for half-deleted surrogate pairs)
+            val before = ic.getTextBeforeCursor(16, 0)
+            if (before != null && before.isNotEmpty()) {
+                val bi = java.text.BreakIterator.getCharacterInstance()
+                bi.setText(before.toString())
+                val end = bi.last()
+                val prev = bi.previous()
+                val deleteCount = if (prev != java.text.BreakIterator.DONE) end - prev else 1
+                ic.deleteSurroundingText(deleteCount, 0)
+            } else {
+                ic.deleteSurroundingText(1, 0)
+            }
         }
         ic.endBatchEdit()
     }
@@ -217,6 +229,21 @@ class RewordKeyboardService :
         ic.commitText("$word ", 1)
         ic.endBatchEdit()
         keyboardView.clearSuggestions()
+    }
+
+    override fun onVoiceInputPressed() {
+        try {
+            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE,
+                    if (keyboardView.isEnglishLayout) "en-US" else "ru-RU")
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(this, "Voice input not available", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     /* SuggestionStripListener (legacy compat) */

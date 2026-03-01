@@ -30,6 +30,10 @@ import { useSettingsStore } from '@/stores/useSettingsStore';
 import { colors, spacing } from '@/theme';
 import * as SecureStore from 'expo-secure-store';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+
+// Allow expo-web-browser to complete the auth session on warm start
+WebBrowser.maybeCompleteAuthSession();
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -87,23 +91,28 @@ export default function SignInScreen() {
     return () => clearInterval(timer);
   }, [countdown]);
 
-  // Handle deep link for OAuth callback
+  // Warm up browser for faster OAuth launch
   useEffect(() => {
-    const handleDeepLink = async (event: { url: string }) => {
-      if (__DEV__) console.log('[Auth] Deep link:', event.url);
+    WebBrowser.warmUpAsync();
+    return () => {
+      WebBrowser.coolDownAsync();
     };
-    const sub = Linking.addEventListener('url', handleDeepLink);
-    return () => sub.remove();
   }, []);
 
   const syncSession = useCallback(
-    async (accessToken: string, refreshToken: string, userId: string, userEmail?: string) => {
+    async (accessToken: string, refreshToken: string, userId: string, userEmail?: string, userMetadata?: Record<string, any>) => {
       await SecureStore.setItemAsync('access_token', accessToken);
       await SecureStore.setItemAsync('refresh_token', refreshToken);
       setTokens(accessToken, refreshToken);
+
+      const displayName = userMetadata?.full_name || userMetadata?.name || userMetadata?.user_name || undefined;
+      const avatarUrl = userMetadata?.avatar_url || userMetadata?.picture || undefined;
+
       setUser({
         id: userId,
         email: userEmail,
+        displayName,
+        avatarUrl,
         createdAt: new Date().toISOString(),
       });
     },
@@ -119,15 +128,26 @@ export default function SignInScreen() {
     }
   };
 
-  /** Sign in with Google OAuth */
+  /** Sign in with Google OAuth via in-app browser (expo-web-browser) */
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Use explicit scheme-based URL for production builds
-      // Linking.createURL may vary between dev/prod; force the correct deep link
-      const expoUrl = Linking.createURL('auth/callback');
-      const redirectUrl = __DEV__ ? expoUrl : 'rewordai://auth/callback';
+      // Use the WEBSITE URL as redirect so:
+      //  • Supabase can always redirect to a valid HTTPS origin
+      //  • WebBrowser detects the navigation and auto-closes
+      // In dev we can fall back to the deep-link scheme, but production
+      // MUST use the website URL for reliable Chrome Custom Tab interception.
+      const WEBSITE_ORIGIN = 'https://reword-website.onrender.com';
+      const redirectUrl = __DEV__
+        ? Linking.createURL('auth/callback')         // exp://… scheme (dev)
+        : `${WEBSITE_ORIGIN}/auth/app-complete`;     // HTTPS (prod)
+
+      // WebBrowser monitors this URL prefix to know when to close.
+      // In production we use the same HTTPS URL so the browser reliably closes.
+      const browserRedirectUrl = __DEV__
+        ? redirectUrl
+        : `${WEBSITE_ORIGIN}/auth/app-complete`;
 
       if (__DEV__) console.log('[Auth] OAuth redirectTo:', redirectUrl);
 
@@ -140,9 +160,102 @@ export default function SignInScreen() {
         },
       });
       if (oauthError) throw oauthError;
-      if (data?.url) {
-        // Open the OAuth URL in external browser
-        await Linking.openURL(data.url);
+      if (!data?.url) throw new Error('No OAuth URL returned');
+
+      // Open in-app browser (Chrome Custom Tab / SFSafariViewController)
+      // This returns the redirect URL directly — no deep link handling needed
+      const result = await WebBrowser.openAuthSessionAsync(
+        data.url,
+        browserRedirectUrl,
+        { showInRecents: true },
+      );
+
+      if (__DEV__) console.log('[Auth] WebBrowser result:', result.type);
+
+      if (result.type === 'success' && result.url) {
+        // Extract tokens from the redirect URL hash fragment
+        const url = result.url;
+        const hashIndex = url.indexOf('#');
+        if (hashIndex !== -1) {
+          const hash = url.substring(hashIndex + 1);
+          const params = new URLSearchParams(hash);
+          const accessToken = params.get('access_token');
+          const refreshToken = params.get('refresh_token');
+
+          if (accessToken && refreshToken) {
+            if (__DEV__) console.log('[Auth] Got tokens from OAuth redirect');
+            const { data: sessionData, error: sessionError } =
+              await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              });
+
+            if (sessionError) throw sessionError;
+
+            if (sessionData.session) {
+              await syncSession(
+                sessionData.session.access_token,
+                sessionData.session.refresh_token,
+                sessionData.session.user.id,
+                sessionData.session.user.email ?? undefined,
+                sessionData.session.user.user_metadata,
+              );
+              navigateAfterAuth();
+              return;
+            }
+          }
+        }
+
+        // Fallback: try PKCE code exchange
+        const questionIndex = url.indexOf('?');
+        if (questionIndex !== -1) {
+          const query = url.substring(questionIndex + 1);
+          const params = new URLSearchParams(query);
+          const code = params.get('code');
+          if (code) {
+            if (__DEV__) console.log('[Auth] Got PKCE code, exchanging...');
+            const { data: codeData, error: codeError } =
+              await supabase.auth.exchangeCodeForSession(code);
+            if (codeError) throw codeError;
+            if (codeData.session) {
+              await syncSession(
+                codeData.session.access_token,
+                codeData.session.refresh_token,
+                codeData.session.user.id,
+                codeData.session.user.email ?? undefined,
+                codeData.session.user.user_metadata,
+              );
+              navigateAfterAuth();
+              return;
+            }
+          }
+        }
+
+        throw new Error('Не удалось получить токены авторизации');
+      } else if (result.type === 'cancel' || result.type === 'dismiss') {
+        // Browser closed — but auth may have completed via onAuthStateChange
+        // (Supabase sometimes redirects to the website instead of the app scheme,
+        //  so WebBrowser can't intercept the redirect and returns "cancel".)
+        if (__DEV__) console.log('[Auth] WebBrowser closed, checking if auth completed...');
+
+        // Give onAuthStateChange a moment to fire and sync the session
+        await new Promise((r) => setTimeout(r, 1500));
+
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          if (__DEV__) console.log('[Auth] Session found after browser dismiss — syncing');
+          await syncSession(
+            session.access_token,
+            session.refresh_token,
+            session.user.id,
+            session.user.email ?? undefined,
+            session.user.user_metadata,
+          );
+          navigateAfterAuth();
+          return;
+        }
+
+        if (__DEV__) console.log('[Auth] No session after cancel — user truly cancelled');
       }
     } catch (err: any) {
       console.error('[Auth] Google sign-in error:', err);
@@ -176,7 +289,18 @@ export default function SignInScreen() {
       setTimeout(() => otpInputRef.current?.focus(), 300);
     } catch (err: any) {
       console.error('[Auth] OTP send error:', err);
-      setError(err.message || 'Не удалось отправить код. Попробуйте снова.');
+      const msg = err.message || '';
+      if (msg.includes('magic link') || msg.includes('sending')) {
+        // Supabase free-tier can only send 3 emails per hour.
+        setError(
+          'Не удалось отправить письмо. Возможно, превышен лимит отправок (3 письма/час). ' +
+          'Попробуйте позже или используйте вход через Google.',
+        );
+      } else if (msg.includes('rate') || msg.includes('limit')) {
+        setError('Слишком много запросов. Подождите немного и попробуйте снова.');
+      } else {
+        setError(msg || 'Не удалось отправить код. Попробуйте снова.');
+      }
     } finally {
       setLoading(false);
     }

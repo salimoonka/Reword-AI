@@ -1,6 +1,7 @@
 /**
  * Enable Keyboard Screen
  * Step-by-step instructions to enable keyboard
+ * Always uses dark theme for a premium onboarding experience
  */
 
 import {
@@ -14,7 +15,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { colors, spacing, typography } from '@/theme';
+import { spacing, typography } from '@/theme';
+import { darkColors } from '@/theme/colors';
+import { useMemo } from 'react';
+import type { Colors } from '@/theme';
 
 const iosSteps = [
   'Откройте «Настройки» на вашем iPhone',
@@ -33,13 +37,15 @@ const androidSteps = [
 ];
 
 export default function EnableKeyboardScreen() {
+  // Onboarding always uses dark theme
+  const c = darkColors;
+  const s = useMemo(() => makeStyles(c), [c]);
   const steps = Platform.OS === 'ios' ? iosSteps : androidSteps;
 
   const openSettings = async () => {
     if (Platform.OS === 'ios') {
       Linking.openURL('app-settings:');
     } else {
-      // Open Android Input Method settings directly
       try {
         await Linking.sendIntent('android.settings.INPUT_METHOD_SETTINGS');
       } catch {
@@ -49,141 +55,143 @@ export default function EnableKeyboardScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Включите клавиатуру</Text>
-          <Text style={styles.subtitle}>
+    <SafeAreaView style={s.container}>
+      <ScrollView style={s.scroll} contentContainerStyle={s.content}>
+        <View style={s.header}>
+          <Text style={s.title}>Включите клавиатуру</Text>
+          <Text style={s.subtitle}>
             Следуйте этим шагам, чтобы добавить Reword AI
           </Text>
         </View>
 
         {/* Steps */}
-        <View style={styles.steps}>
+        <View style={s.steps}>
           {steps.map((step, index) => (
-            <View key={index} style={styles.stepItem}>
-              <View style={styles.stepNumber}>
-                <Text style={styles.stepNumberText}>{index + 1}</Text>
+            <View key={index} style={s.stepItem}>
+              <View style={s.stepNumber}>
+                <Text style={s.stepNumberText}>{index + 1}</Text>
               </View>
-              <Text style={styles.stepText}>{step}</Text>
+              <Text style={s.stepText}>{step}</Text>
             </View>
           ))}
         </View>
 
         {/* Image placeholder */}
-        <View style={styles.imagePlaceholder}>
-          <Text style={styles.imagePlaceholderText}>
+        <View style={s.imagePlaceholder}>
+          <Text style={s.imagePlaceholderText}>
             📱 Скриншот настроек
           </Text>
         </View>
       </ScrollView>
 
       {/* Buttons */}
-      <View style={styles.buttons}>
+      <View style={s.buttons}>
         <TouchableOpacity
-          style={styles.settingsButton}
+          style={s.settingsButton}
           onPress={openSettings}
           activeOpacity={0.8}
         >
-          <Text style={styles.settingsButtonText}>Открыть настройки</Text>
+          <Text style={s.settingsButtonText}>Открыть настройки</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.continueButton}
+          style={s.continueButton}
           onPress={() => router.push('/onboarding/full-access')}
           activeOpacity={0.8}
         >
-          <Text style={styles.continueButtonText}>Продолжить</Text>
+          <Text style={s.continueButtonText}>Продолжить</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background.primary,
-  },
-  scroll: {
-    flex: 1,
-  },
-  content: {
-    padding: spacing.xl,
-    paddingBottom: spacing.lg,
-  },
-  header: {
-    marginBottom: spacing.xl,
-  },
-  title: {
-    ...typography.h2,
-    color: colors.text.primary,
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.text.secondary,
-  },
-  steps: {
-    gap: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  stepItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.accent.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
-  },
-  stepNumberText: {
-    ...typography.captionMedium,
-    color: colors.white,
-  },
-  stepText: {
-    ...typography.body,
-    color: colors.text.primary,
-    flex: 1,
-    paddingTop: spacing.xs,
-  },
-  imagePlaceholder: {
-    height: 200,
-    backgroundColor: colors.background.secondary,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  imagePlaceholderText: {
-    ...typography.body,
-    color: colors.text.tertiary,
-  },
-  buttons: {
-    padding: spacing.xl,
-    gap: spacing.md,
-  },
-  settingsButton: {
-    backgroundColor: colors.background.secondary,
-    paddingVertical: spacing.lg,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  settingsButtonText: {
-    ...typography.button,
-    color: colors.accent.primary,
-  },
-  continueButton: {
-    backgroundColor: colors.accent.primary,
-    paddingVertical: spacing.lg,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  continueButtonText: {
-    ...typography.button,
-    color: colors.white,
-  },
-});
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.background.primary,
+    },
+    scroll: {
+      flex: 1,
+    },
+    content: {
+      padding: spacing.xl,
+      paddingBottom: spacing.lg,
+    },
+    header: {
+      marginBottom: spacing.xl,
+    },
+    title: {
+      ...typography.h2,
+      color: c.text.primary,
+      marginBottom: spacing.sm,
+    },
+    subtitle: {
+      ...typography.body,
+      color: c.text.secondary,
+    },
+    steps: {
+      gap: spacing.lg,
+      marginBottom: spacing.xl,
+    },
+    stepItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+    },
+    stepNumber: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: c.accent.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.md,
+    },
+    stepNumberText: {
+      ...typography.captionMedium,
+      color: c.white,
+    },
+    stepText: {
+      ...typography.body,
+      color: c.text.primary,
+      flex: 1,
+      paddingTop: spacing.xs,
+    },
+    imagePlaceholder: {
+      height: 200,
+      backgroundColor: c.background.secondary,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    imagePlaceholderText: {
+      ...typography.body,
+      color: c.text.tertiary,
+    },
+    buttons: {
+      padding: spacing.xl,
+      gap: spacing.md,
+    },
+    settingsButton: {
+      backgroundColor: c.background.secondary,
+      paddingVertical: spacing.lg,
+      borderRadius: 12,
+      alignItems: 'center',
+    },
+    settingsButtonText: {
+      ...typography.button,
+      color: c.accent.primary,
+    },
+    continueButton: {
+      backgroundColor: c.accent.primary,
+      paddingVertical: spacing.lg,
+      borderRadius: 12,
+      alignItems: 'center',
+    },
+    continueButtonText: {
+      ...typography.button,
+      color: c.white,
+    },
+  });
+}

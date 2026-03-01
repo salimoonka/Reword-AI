@@ -32,6 +32,7 @@ import {
   getProductPrice,
   type ProductSubscription,
 } from '@/services/iap';
+import * as WebBrowser from 'expo-web-browser';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -156,7 +157,7 @@ export default function SubscriptionScreen() {
           </TouchableOpacity>
           <View style={{ flex: 1 }} />
           <TouchableOpacity onPress={handleRestore} disabled={isRestoring}>
-            <Text style={[styles.restoreLink, { color: colors.accent.primary }]}>
+            <Text style={[styles.restoreLink, { color: '#FFFFFF' }]}>
               {isRestoring ? 'Загрузка...' : 'Восстановить'}
             </Text>
           </TouchableOpacity>
@@ -232,6 +233,34 @@ export default function SubscriptionScreen() {
               </View>
             </BlurView>
           )}
+
+          {/* Website card — additional payment option */}
+          <BlurView intensity={isDarkMode ? 30 : 50} tint={blurTint} style={[styles.websiteCard, { borderColor: cardBorder }]}>
+            <View style={styles.websiteCardInner}>
+              <View style={styles.websiteIconWrap}>
+                <Ionicons name="globe-outline" size={24} color={colors.accent.primary} />
+              </View>
+              <Text style={[styles.websiteTitle, { color: textPrimary }]}>
+                Оплата на сайте
+              </Text>
+              <Text style={[styles.websiteDesc, { color: textSecondary }]}>
+                Посетите наш сайт для подробной информации о подписке и дополнительных способов оплаты
+              </Text>
+              <TouchableOpacity
+                style={styles.websiteButton}
+                onPress={() => WebBrowser.openBrowserAsync('https://reword-website.onrender.com/subscribe')}
+                activeOpacity={0.8}
+              >
+                <LinearGradient
+                  colors={['rgba(155,109,255,0.15)', 'rgba(155,109,255,0.05)']}
+                  style={styles.websiteButtonGradient}
+                >
+                  <Ionicons name="open-outline" size={16} color={colors.accent.primary} />
+                  <Text style={styles.websiteButtonText}>Открыть сайт</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </BlurView>
 
           {/* Legal */}
           <Text style={[styles.legal, { color: isDarkMode ? '#666' : '#999' }]}>
@@ -464,6 +493,57 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     textAlign: 'center',
     paddingHorizontal: spacing.md,
+  },
+
+  // Website card
+  websiteCard: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    marginBottom: spacing.lg,
+    marginTop: spacing.sm,
+  },
+  websiteCardInner: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: spacing.lg,
+  },
+  websiteIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: 'rgba(155,109,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  websiteTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  websiteDesc: {
+    fontSize: 13,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  websiteButton: {
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  websiteButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  websiteButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#9B6DFF',
   },
 
   // Footer

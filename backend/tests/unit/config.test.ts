@@ -33,7 +33,7 @@ describe('Config', () => {
 
   it('should have free paraphrases limit', () => {
     expect(config.freeParaphrasesLimit).toBeGreaterThan(0);
-    expect(config.freeParaphrasesLimit).toBe(5); // PRD: 5 free per day
+    expect(config.freeParaphrasesLimit).toBe(30); // PRD: 30 free per day
   });
 
   it('should not expose sensitive keys directly', () => {

@@ -68,18 +68,18 @@ describe('useSubscriptionStore', () => {
   describe('quota management', () => {
     it('should set quota values', () => {
       act(() => {
-        useSubscriptionStore.getState().setQuota(3, 5, '2026-02-21T00:00:00Z');
+        useSubscriptionStore.getState().setQuota(3, 30, '2026-02-21T00:00:00Z');
       });
 
       const state = useSubscriptionStore.getState();
       expect(state.paraphrasesUsed).toBe(3);
-      expect(state.paraphrasesLimit).toBe(5);
+      expect(state.paraphrasesLimit).toBe(30);
       expect(state.quotaResetAt).toBe('2026-02-21T00:00:00Z');
     });
 
     it('should increment usage by 1', () => {
       act(() => {
-        useSubscriptionStore.getState().setQuota(2, 5, null);
+        useSubscriptionStore.getState().setQuota(2, 30, null);
       });
 
       act(() => {
@@ -91,7 +91,7 @@ describe('useSubscriptionStore', () => {
 
     it('should reset quota to 0', () => {
       act(() => {
-        useSubscriptionStore.getState().setQuota(5, 5, null);
+        useSubscriptionStore.getState().setQuota(30, 30, null);
       });
 
       act(() => {
@@ -141,9 +141,9 @@ describe('useSubscriptionStore', () => {
           },
           quota: {
             tier: 'free',
-            daily_limit: 5,
+            daily_limit: 30,
             daily_used: 3,
-            remaining: 2,
+            remaining: 27,
           },
         });
       });
@@ -153,7 +153,7 @@ describe('useSubscriptionStore', () => {
       expect(state.isPremium).toBe(false);
       expect(state.isActive).toBe(false);
       expect(state.paraphrasesUsed).toBe(3);
-      expect(state.paraphrasesLimit).toBe(5);
+      expect(state.paraphrasesLimit).toBe(30);
     });
   });
 });

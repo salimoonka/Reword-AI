@@ -87,13 +87,63 @@
 
 ### 2.5 Проверка OAuth потока
 
-Как работает авторизация:
-1. Приложение вызывает `supabase.auth.signInWithOAuth({ provider: 'google' })`
-2. Supabase возвращает URL → приложение открывает браузер
-3. Пользователь выбирает Google аккаунт
-4. Google редиректит на `https://wlmfsohrvcxatgnwezfy.supabase.co/auth/v1/callback`
-5. Supabase обрабатывает → редирект на `rewordai://auth/callback`
-6. Deep link возвращает в приложение → сессия создаётся автоматически
+Как работает авторизация (обновлено — используется `expo-web-browser`):
+1. Приложение вызывает `supabase.auth.signInWithOAuth({ provider: 'google', options: { skipBrowserRedirect: true } })`
+2. Supabase возвращает OAuth URL
+3. Приложение открывает **in-app browser** через `WebBrowser.openAuthSessionAsync(url, redirectUrl)`
+   - На Android: Chrome Custom Tab
+   - На iOS: SFSafariViewController
+4. Пользователь выбирает Google аккаунт
+5. Google редиректит на `https://wlmfsohrvcxatgnwezfy.supabase.co/auth/v1/callback`
+6. Supabase обрабатывает → редирект на `rewordai://auth/callback#access_token=...`
+7. `WebBrowser` перехватывает redirect URL и **возвращает его напрямую** в вызывающий код
+8. Приложение извлекает access_token/refresh_token из URL и вызывает `supabase.auth.setSession()`
+9. Сессия создаётся → навигация в приложение
+
+> ⚠️ **Deep link НЕ используется** для основного OAuth потока. `WebBrowser.openAuthSessionAsync()` возвращает URL как Promise-результат. Экран `callback.tsx` остаётся только как fallback.
+
+---
+
+## 2.6 Email OTP — настройка шаблона (ОБЯЗАТЕЛЬНО!)
+
+По умолчанию Supabase отправляет **Magic Link** (ссылку) вместо **OTP кода** (6-значного).
+Чтобы пользователи получали 6-значный код:
+
+1. Supabase Dashboard → **Authentication → Email Templates**
+2. Выберите шаблон **"Magic Link"**
+3. Замените содержимое на:
+
+```html
+<h2>Ваш код входа — Reword AI</h2>
+<p>Используйте этот код для входа в приложение:</p>
+<h1 style="font-size: 32px; letter-spacing: 8px; text-align: center; padding: 16px; background: #f5f5f5; border-radius: 8px;">{{ .Token }}</h1>
+<p>Код действителен 60 минут.</p>
+<p>Если вы не запрашивали код, проигнорируйте это письмо.</p>
+```
+
+4. **Subject** (тема письма): `Ваш код входа — Reword AI`
+5. Сохраните
+
+> 📌 Ключ: `{{ .Token }}` — эта переменная отвечает за 6-значный OTP код.
+> Если использовать `{{ .ConfirmationURL }}` — будет отправлена Magic Link (ссылка).
+
+### 2.7 Настройка пользовательского SMTP (рекомендуется для продакшена)
+
+По умолчанию Supabase отправляет email через свой SMTP-сервер с ограничением 3 письма/час.
+Для продакшена настройте свой SMTP:
+
+1. Supabase Dashboard → **Project Settings → Authentication → SMTP Settings**
+2. Включите **"Enable Custom SMTP"**
+3. Заполните:
+   - **Sender email**: `noreply@rewordai.com` (или ваш email)
+   - **Sender name**: `Reword AI`
+   - **Host**: SMTP-сервер вашего провайдера (например, `smtp.gmail.com`)
+   - **Port**: `587` (TLS) или `465` (SSL)
+   - **Username**: ваш email
+   - **Password**: пароль приложения (для Gmail — App Password)
+4. Нажмите **Save**
+
+> ⚠️ Для Gmail: создайте App Password в Settings → Security → 2-Step Verification → App Passwords.
 
 ---
 
@@ -191,14 +241,16 @@ npx eas build --profile production --platform android
 - [ ] Supabase миграции применены (все 3 файла)
 - [ ] Google OAuth provider включён в Supabase Dashboard
 - [ ] Redirect URLs настроены (rewordai://auth/callback, exp://...)
+- [ ] **Email Template "Magic Link" обновлён** — содержит `{{ .Token }}` для OTP кодов
+- [ ] (Рекомендуется) Custom SMTP настроен для отправки с вашего домена
 - [ ] Backend задеплоен на Render
 - [ ] `SUPABASE_SERVICE_KEY` установлен на Render
 - [ ] `OPENROUTER_API_KEY` установлен на Render
 - [ ] Health check проходит: `curl <backend-url>/health`
 - [ ] `eas.json` содержит правильный `EXPO_PUBLIC_API_URL`
 - [ ] Тестовая сборка установлена на физическом устройстве
-- [ ] Google Sign-In работает (откроет браузер → вернётся в приложение)
-- [ ] Email OTP работает (код приходит на почту → вход работает)
+- [ ] Google Sign-In работает (in-app browser → возврат в приложение)
+- [ ] Email OTP работает (6-значный код приходит на почту → вход работает)
 - [ ] Anonymous skip работает
 
 ---
@@ -206,9 +258,16 @@ npx eas build --profile production --platform android
 ## 6. Troubleshooting
 
 ### Google OAuth не редиректит обратно в приложение
+- OAuth теперь работает через `expo-web-browser` (`WebBrowser.openAuthSessionAsync()`)
 - Убедитесь что `rewordai://auth/callback` добавлен в **Supabase → Authentication → URL Configuration → Additional Redirect URLs**
-- Проверьте что `app.json` содержит `"scheme": "rewordai"`
-- На Android: проверьте intent filter для deep link
+- Проверьте что `app.json` содержит `"scheme": "rewordai"` и плагин `expo-web-browser`
+- На Android: Chrome Custom Tab автоматически обрабатывает redirect
+- `expo-web-browser` возвращает URL напрямую — deep link обработка НЕ нужна
+
+### Email OTP приходит как Magic Link (ссылка вместо кода)
+- Проверьте шаблон **Magic Link** в **Supabase Dashboard → Authentication → Email Templates**
+- Шаблон ДОЛЖЕН содержать `{{ .Token }}` (а НЕ `{{ .ConfirmationURL }}`)
+- См. раздел 2.6 выше для полного шаблона
 
 ### Ошибка JWT verification failed на backend
 - Ваш проект использует **ECC P-256** (asymmetric). Backend читает публичный ключ автоматически чеႈез JWKS

@@ -1,6 +1,7 @@
 /**
  * Onboarding Welcome Screen
  * Value proposition + Add Keyboard button
+ * Always uses dark theme for a premium onboarding experience
  */
 
 import {
@@ -13,12 +14,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { colors, spacing, typography } from '@/theme';
-import { useRef, useEffect } from 'react';
+import { spacing, typography } from '@/theme';
+import { darkColors } from '@/theme/colors';
+import { useRef, useEffect, useMemo } from 'react';
+import type { Colors } from '@/theme';
 
 const { width } = Dimensions.get('window');
 
 export default function WelcomeScreen() {
+  // Onboarding always uses dark theme
+  const c = darkColors;
+  const s = useMemo(() => makeStyles(c), [c]);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
@@ -38,48 +45,35 @@ export default function WelcomeScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+    <SafeAreaView style={s.container}>
+      <Animated.View style={[s.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         {/* Hero Section */}
-        <View style={styles.hero}>
-          {/* Placeholder for illustration */}
-          <View style={styles.illustration} />
-          
-          <Text style={styles.title}>
+        <View style={s.hero}>
+          <View style={s.illustration} />
+
+          <Text style={s.title}>
             Пишите умнее{'\n'}на русском языке
           </Text>
-          
-          <Text style={styles.subtitle}>
+
+          <Text style={s.subtitle}>
             Мгновенная проверка орфографии и AI-перефразирование в одно касание
           </Text>
         </View>
 
         {/* Features */}
-        <View style={styles.features}>
-          <FeatureItem
-            emoji="✓"
-            title="Локальная проверка"
-            description="Работает офлайн, быстро и приватно"
-          />
-          <FeatureItem
-            emoji="✨"
-            title="AI-перефразирование"
-            description="8 режимов: формальный, дружелюбный и другие"
-          />
-          <FeatureItem
-            emoji="🔒"
-            title="Приватность"
-            description="Мы не храним ваши тексты"
-          />
+        <View style={s.features}>
+          <FeatureItem c={c} emoji="✓" title="Локальная проверка" description="Работает офлайн, быстро и приватно" />
+          <FeatureItem c={c} emoji="✨" title="AI-перефразирование" description="8 режимов: формальный, дружелюбный и другие" />
+          <FeatureItem c={c} emoji="🔒" title="Приватность" description="Мы не храним ваши тексты" />
         </View>
 
         {/* CTA Button */}
         <TouchableOpacity
-          style={styles.button}
+          style={s.button}
           onPress={() => router.push('/onboarding/enable-keyboard')}
           activeOpacity={0.8}
         >
-          <Text style={styles.buttonText}>Добавить клавиатуру</Text>
+          <Text style={s.buttonText}>Добавить клавиатуру</Text>
         </TouchableOpacity>
       </Animated.View>
     </SafeAreaView>
@@ -87,100 +81,89 @@ export default function WelcomeScreen() {
 }
 
 function FeatureItem({
+  c,
   emoji,
   title,
   description,
 }: {
+  c: Colors;
   emoji: string;
   title: string;
   description: string;
 }) {
   return (
-    <View style={styles.featureItem}>
-      <View style={styles.featureIcon}>
-        <Text style={styles.featureEmoji}>{emoji}</Text>
+    <View style={featureStyles.item}>
+      <View style={[featureStyles.icon, { backgroundColor: c.background.secondary }]}>
+        <Text style={featureStyles.emoji}>{emoji}</Text>
       </View>
-      <View style={styles.featureText}>
-        <Text style={styles.featureTitle}>{title}</Text>
-        <Text style={styles.featureDescription}>{description}</Text>
+      <View style={featureStyles.text}>
+        <Text style={[featureStyles.title, { color: c.text.primary }]}>{title}</Text>
+        <Text style={[featureStyles.desc, { color: c.text.secondary }]}>{description}</Text>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background.primary,
-  },
-  content: {
-    flex: 1,
-    padding: spacing.xl,
-    justifyContent: 'space-between',
-  },
-  hero: {
-    alignItems: 'center',
-    paddingTop: spacing.xxxl,
-  },
-  illustration: {
-    width: width * 0.6,
-    height: width * 0.4,
-    backgroundColor: colors.background.secondary,
-    borderRadius: 16,
-    marginBottom: spacing.xl,
-  },
-  title: {
-    ...typography.h1,
-    color: colors.text.primary,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  subtitle: {
-    ...typography.body,
-    color: colors.text.secondary,
-    textAlign: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  features: {
-    gap: spacing.lg,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  featureIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.background.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
+const featureStyles = StyleSheet.create({
+  item: { flexDirection: 'row', alignItems: 'center' },
+  icon: {
+    width: 48, height: 48, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center',
     marginRight: spacing.lg,
   },
-  featureEmoji: {
-    fontSize: 20,
-  },
-  featureText: {
-    flex: 1,
-  },
-  featureTitle: {
-    ...typography.bodyMedium,
-    color: colors.text.primary,
-    marginBottom: spacing.xs,
-  },
-  featureDescription: {
-    ...typography.bodySmall,
-    color: colors.text.secondary,
-  },
-  button: {
-    backgroundColor: colors.accent.primary,
-    paddingVertical: spacing.lg,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: spacing.lg,
-  },
-  buttonText: {
-    ...typography.button,
-    color: colors.white,
-  },
+  emoji: { fontSize: 20 },
+  text: { flex: 1 },
+  title: { ...typography.bodyMedium, marginBottom: spacing.xs },
+  desc: { ...typography.bodySmall },
 });
+
+function makeStyles(c: Colors) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: c.background.primary,
+    },
+    content: {
+      flex: 1,
+      padding: spacing.xl,
+      justifyContent: 'space-between',
+    },
+    hero: {
+      alignItems: 'center',
+      paddingTop: spacing.xxxl,
+    },
+    illustration: {
+      width: width * 0.6,
+      height: width * 0.4,
+      backgroundColor: c.background.secondary,
+      borderRadius: 16,
+      marginBottom: spacing.xl,
+    },
+    title: {
+      ...typography.h1,
+      color: c.text.primary,
+      textAlign: 'center',
+      marginBottom: spacing.md,
+    },
+    subtitle: {
+      ...typography.body,
+      color: c.text.secondary,
+      textAlign: 'center',
+      paddingHorizontal: spacing.lg,
+    },
+    features: {
+      gap: spacing.lg,
+    },
+    button: {
+      backgroundColor: c.accent.primary,
+      paddingVertical: spacing.lg,
+      borderRadius: 12,
+      alignItems: 'center',
+      marginBottom: spacing.lg,
+    },
+    buttonText: {
+      ...typography.button,
+      color: c.white,
+    },
+  });
+}

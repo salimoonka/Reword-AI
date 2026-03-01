@@ -17,6 +17,7 @@ import { colors } from '@/theme/colors';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initIAP, cleanupIAP, isUserCancelledError, type VerifyReceiptResponse } from '@/services/iap';
 import { initAuth } from '@/services/supabase/auth';
+import { warmUpBackend } from '@/services/api/client';
 
 // Prevent splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -71,6 +72,9 @@ export default function RootLayout() {
       await initAuth();
       setAuthReady(true);
 
+      // Wake up backend early (Render free tier cold start)
+      warmUpBackend();
+
       // Initialize IAP connection with global callbacks
       if (!iapInitialized.current) {
         iapInitialized.current = true;
@@ -83,7 +87,7 @@ export default function RootLayout() {
             if (response.subscription.is_premium) {
               Alert.alert(
                 'Подписка оформлена! 🎉',
-                'Наслаждайтесь безлимитными перефразированиями!',
+                'Наслаждайтесь безлимитными токенами!',
                 [{ text: 'Отлично!' }]
               );
             }
@@ -129,12 +133,12 @@ export default function RootLayout() {
         const { path } = Linking.parse(event.url);
         if (!path) return;
 
-        // Auth callbacks with tokens/code must reach the callback screen
-        // Do NOT skip them — they contain session data that needs to be processed
+        // Auth callbacks are now handled directly by WebBrowser.openAuthSessionAsync()
+        // in the sign-in screen (no deep link handling needed for OAuth)
         if (path.startsWith('auth/callback')) {
-          // If we're not already on the callback screen, navigate there
-          // The callback screen will extract tokens from the URL
-          router.push('/auth/callback' as any);
+          if (__DEV__) {
+            console.log('[DeepLink] Auth callback URL — handled by WebBrowser, ignoring');
+          }
           return;
         }
 

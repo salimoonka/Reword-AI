@@ -26,7 +26,7 @@ export const PRODUCT_DISPLAY: Record<
 > = {
   [PRODUCT_IDS.PRO_MONTHLY]: {
     title: 'PRO подписка',
-    description: 'Безлимитные AI-перефразирования',
+    description: 'Безлимитные AI-токены',
     price: '199 ₽',
     period: 'месяц',
   },

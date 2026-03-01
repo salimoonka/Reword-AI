@@ -155,8 +155,8 @@ describe('PRD Acceptance Criteria', () => {
 
   // PRD Section 10: Monetization
   describe('Monetization (PRD §10)', () => {
-    it('free tier should have 5 daily paraphrases', () => {
-      expect(config.freeParaphrasesLimit).toBe(5);
+    it('free tier should have 30 daily paraphrases', () => {
+      expect(config.freeParaphrasesLimit).toBe(30);
     });
 
     it('estimateCost should calculate token costs', () => {

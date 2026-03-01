@@ -53,7 +53,7 @@ describe('QuotaExceededModal', () => {
     );
 
     expect(
-      screen.getByText('Вы использовали все бесплатные перефразирования за сегодня.')
+      screen.getByText('Вы использовали все бесплатные токены за сегодня.')
     ).toBeTruthy();
   });
 });
