@@ -20,8 +20,11 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.util.AttributeSet
 import android.view.Gravity
+import android.animation.ValueAnimator
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.*
 import ai.reword.keyboard.models.ParaphraseMode
 
@@ -126,6 +129,11 @@ class KeyboardView @JvmOverloads constructor(
     private lateinit var bottomBar: LinearLayout
     private var emojiContainer: FrameLayout? = null
     private var emojiGridHost: FrameLayout? = null
+    private var emojiScrollView: HorizontalScrollView? = null
+    private var emojiCategoryViews = mutableListOf<View>()
+    private var emojiSectionOffsets = intArrayOf()
+    private var emojiColWidth = 0
+    private var emojiSnapAnimator: ValueAnimator? = null
 
     /* ================================================================
        INIT
@@ -399,8 +407,11 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     /* ================================================================
-       EMOJI PICKER (iOS-style horizontal paging, 4 rows x 7 cols)
+       EMOJI PICKER – Continuous Apple-style scroll, column snapping
        ================================================================ */
+    private val EMOJI_ROWS = 5
+    private val EMOJI_VISIBLE_COLS = 8   // ~8 columns visible simultaneously
+
     private fun toggleEmojiPicker() {
         if (isEmojiMode) hideEmojiPicker() else showEmojiPicker()
     }
@@ -437,8 +448,26 @@ class KeyboardView @JvmOverloads constructor(
             )
         }
 
-        /* Search bar with larger border-radius and search icon */
-        emojiLayout.addView(LinearLayout(context).apply {
+        /* Search bar */
+        emojiLayout.addView(buildEmojiSearchBar())
+
+        /* Emoji grid host */
+        emojiGridHost = FrameLayout(context).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        emojiLayout.addView(emojiGridHost)
+
+        /* Category bar */
+        emojiLayout.addView(buildEmojiCategoryBar())
+
+        emojiContainer?.addView(emojiLayout)
+
+        /* Build grid after layout to know proper width */
+        emojiGridHost?.post { rebuildEmojiGrid() }
+    }
+
+    private fun buildEmojiSearchBar(): LinearLayout {
+        return LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = GradientDrawable().apply {
@@ -463,25 +492,13 @@ class KeyboardView @JvmOverloads constructor(
                 setTextColor(0xFF8E8E93.toInt())
                 gravity = Gravity.CENTER_VERTICAL
             })
-        })
-
-        /* Emoji grid host (swapped per category) */
-        emojiGridHost = FrameLayout(context).apply {
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
         }
-        emojiLayout.addView(emojiGridHost)
-
-        /* Category bar */
-        emojiLayout.addView(buildEmojiCategoryBar())
-
-        emojiContainer?.addView(emojiLayout)
-
-        /* Build emoji grid after layout to know proper width */
-        emojiGridHost?.post { rebuildEmojiGrid() }
     }
 
     private fun hideEmojiPicker() {
         isEmojiMode = false
+        emojiSnapAnimator?.cancel()
+        emojiScrollView = null
         emojiContainer?.visibility = GONE
         toolbar.visibility = VISIBLE
         keysSection.visibility = VISIBLE
@@ -489,109 +506,54 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     /**
-     * Rebuild the emoji page grid for the currently-selected category.
-     * Uses horizontal paging: 4 rows x 7 columns per page with snap.
+     * Build continuous horizontal emoji grid with column snapping.
+     * All categories in a single scrollable strip – EMOJI_ROWS rows per column.
+     * Small swipe = 1 column, larger = proportionally more.
      */
     private fun rebuildEmojiGrid() {
         val host = emojiGridHost ?: return
         host.removeAllViews()
 
-        val emojis = if (selectedEmojiCategory == 0) {
-            getFrequentEmojis()
-        } else {
-            val data = getEmojiData()
-            if (selectedEmojiCategory - 1 < data.size) data[selectedEmojiCategory - 1] else emptyList()
-        }
+        val hostWidth = host.width
+        if (hostWidth <= 0) return
 
-        if (emojis.isEmpty() && selectedEmojiCategory == 0) {
-            host.addView(TextView(context).apply {
-                text = "\u0427\u0430\u0441\u0442\u043E \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u043C\u044B\u0435 \u044D\u043C\u043E\u0434\u0437\u0438\n\u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F \u0437\u0434\u0435\u0441\u044C"
-                textSize = 15f
-                setTextColor(0xFF8E8E93.toInt())
-                gravity = Gravity.CENTER
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT
-                )
-            })
-            return
-        }
+        val colWidth = hostWidth / EMOJI_VISIBLE_COLS
+        emojiColWidth = colWidth
 
-        val colCount = 7
-        val rowCount = 4
-        val perPage = colCount * rowCount
-        val pageWidth = host.width
-        if (pageWidth <= 0) return
+        /* Gather all sections: frequent + 6 data categories */
+        val allSections = mutableListOf<List<String>>()
+        allSections.add(getFrequentEmojis())          // 0: frequent
+        val data = getEmojiData()
+        for (cat in data) allSections.add(cat)         // 1..6: data categories
 
-        val pageCount = ((emojis.size + perPage - 1) / perPage).coerceAtLeast(1)
-
-        /* HorizontalScrollView with snap-to-page */
-        val hsv = object : HorizontalScrollView(context) {
-            private var startScrollX = 0
-
-            override fun onTouchEvent(ev: MotionEvent): Boolean {
-                if (ev.action == MotionEvent.ACTION_DOWN) startScrollX = scrollX
-                val result = super.onTouchEvent(ev)
-                if (ev.action == MotionEvent.ACTION_UP || ev.action == MotionEvent.ACTION_CANCEL) {
-                    snapToPage()
-                }
-                return result
-            }
-
-            override fun fling(velocityX: Int) {
-                /* suppress momentum - let snapToPage handle paging */
-                snapToPage()
-            }
-
-            private fun snapToPage() {
-                val pw = width
-                if (pw <= 0) return
-                val delta = scrollX - startScrollX
-                val curPage = startScrollX / pw.coerceAtLeast(1)
-                val target = when {
-                    delta > pw / 5  -> curPage + 1
-                    delta < -pw / 5 -> curPage - 1
-                    else -> (scrollX + pw / 2) / pw.coerceAtLeast(1)
-                }
-                val totalWidth = getChildAt(0)?.width ?: pw
-                val maxP = ((totalWidth - 1) / pw.coerceAtLeast(1)).coerceAtLeast(0)
-                smoothScrollTo(target.coerceIn(0, maxP) * pw, 0)
-            }
-        }.apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            )
-            isHorizontalScrollBarEnabled = false
-            isFillViewport = false
-        }
-
-        val pagesRow = LinearLayout(context).apply {
+        /* Build horizontal strip – every column = EMOJI_ROWS cells stacked vertically */
+        val strip = LinearLayout(context).apply {
             orientation = HORIZONTAL
             layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)
         }
 
-        for (p in 0 until pageCount) {
-            val page = LinearLayout(context).apply {
-                orientation = VERTICAL
-                layoutParams = LayoutParams(pageWidth, LayoutParams.MATCH_PARENT)
-                gravity = Gravity.TOP
-            }
-            for (r in 0 until rowCount) {
-                val rowLayout = LinearLayout(context).apply {
-                    orientation = HORIZONTAL
-                    layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
-                    gravity = Gravity.CENTER
+        val offsets = IntArray(allSections.size)
+        var curX = 0
+
+        for ((sIdx, emojis) in allSections.withIndex()) {
+            offsets[sIdx] = curX
+            if (emojis.isEmpty()) continue                // skip empty (e.g. no frequent yet)
+
+            val colCount = (emojis.size + EMOJI_ROWS - 1) / EMOJI_ROWS
+            for (col in 0 until colCount) {
+                val column = LinearLayout(context).apply {
+                    orientation = VERTICAL
+                    layoutParams = LayoutParams(colWidth, LayoutParams.MATCH_PARENT)
                 }
-                for (c in 0 until colCount) {
-                    val idx = p * perPage + r * colCount + c
+                for (row in 0 until EMOJI_ROWS) {
+                    val idx = col * EMOJI_ROWS + row
                     if (idx < emojis.size) {
                         val emoji = emojis[idx]
-                        rowLayout.addView(TextView(context).apply {
+                        column.addView(TextView(context).apply {
                             text = emoji
-                            textSize = 28f
+                            textSize = 26f
                             gravity = Gravity.CENTER
-                            layoutParams = LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
+                            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
                             isClickable = true; isFocusable = true
                             setOnClickListener {
                                 trackEmojiUsage(emoji)
@@ -599,23 +561,128 @@ class KeyboardView @JvmOverloads constructor(
                             }
                         })
                     } else {
-                        rowLayout.addView(View(context).apply {
-                            layoutParams = LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
+                        column.addView(View(context).apply {
+                            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
                         })
                     }
                 }
-                page.addView(rowLayout)
+                strip.addView(column)
+                curX += colWidth
             }
-            pagesRow.addView(page)
         }
 
-        hsv.addView(pagesRow)
-        host.addView(hsv)
+        emojiSectionOffsets = offsets
+
+        /* Custom scroll view with column snapping */
+        val tracker = VelocityTracker.obtain()
+        val scrollView = object : HorizontalScrollView(context) {
+
+            override fun fling(velocityX: Int) { /* suppress default fling */ }
+
+            override fun onTouchEvent(ev: MotionEvent): Boolean {
+                tracker.addMovement(ev)
+                if (ev.action == MotionEvent.ACTION_DOWN) {
+                    emojiSnapAnimator?.cancel()       // cancel any running snap animation
+                }
+                val result = super.onTouchEvent(ev)
+                if (ev.action == MotionEvent.ACTION_UP || ev.action == MotionEvent.ACTION_CANCEL) {
+                    tracker.computeCurrentVelocity(1000, 8000f)
+                    performColumnSnap(tracker.xVelocity, this)
+                    tracker.clear()
+                }
+                return result
+            }
+        }.apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = OVER_SCROLL_IF_CONTENT_SCROLLS
+        }
+
+        scrollView.addView(strip)
+        scrollView.setOnScrollChangeListener { _, sx, _, _, _ -> syncCategoryHighlight(sx) }
+        emojiScrollView = scrollView
+        host.addView(scrollView)
+
+        /* Scroll to previously-selected category */
+        if (selectedEmojiCategory > 0 && selectedEmojiCategory < offsets.size
+                && offsets[selectedEmojiCategory] > 0) {
+            scrollView.post { scrollView.scrollTo(offsets[selectedEmojiCategory], 0) }
+        }
     }
 
     /**
-     * Category bar: ABC | clock(recent) | smiley | animal | food | sport | travel | heart | delete
-     * No background, proper spacing, horizontally scrollable categories.
+     * Snap to nearest column boundary with velocity-proportional distance.
+     * Small flick -> 1 col, medium -> 2-3, fast -> 4-6.
+     * Uses ValueAnimator + DecelerateInterpolator for Apple-like smoothness.
+     */
+    private fun performColumnSnap(velocityX: Float, sv: HorizontalScrollView) {
+        val cw = emojiColWidth
+        if (cw <= 0) return
+
+        val absVel = Math.abs(velocityX)
+        val cols = when {
+            absVel > 5000 -> 6
+            absVel > 3500 -> 4
+            absVel > 2000 -> 3
+            absVel > 1000 -> 2
+            absVel > 200  -> 1
+            else          -> 0
+        }
+
+        /* Positive velocity = finger moved right = content scrolls left (decrease scrollX) */
+        val dir = if (velocityX > 0) -1 else 1
+        val curCol = Math.round(sv.scrollX.toFloat() / cw)
+        val targetCol = if (cols > 0) curCol + dir * cols else curCol
+
+        val totalW = sv.getChildAt(0)?.width ?: sv.width
+        val maxScroll = (totalW - sv.width).coerceAtLeast(0)
+        val targetX = (targetCol * cw).coerceIn(0, maxScroll)
+
+        /* Duration scales with distance */
+        val dist = Math.abs(targetX - sv.scrollX)
+        val dur = when {
+            dist <= 0     -> 0L
+            dist < cw * 2 -> 200L
+            dist < cw * 4 -> 300L
+            else          -> 400L
+        }
+        if (dur <= 0L) return
+
+        val startX = sv.scrollX
+        emojiSnapAnimator?.cancel()
+        emojiSnapAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = dur
+            interpolator = DecelerateInterpolator(2.0f)
+            addUpdateListener { a ->
+                val f = a.animatedValue as Float
+                sv.scrollTo(startX + ((targetX - startX) * f).toInt(), 0)
+            }
+            start()
+        }
+    }
+
+    /** Highlight the category whose section is currently most visible. */
+    private fun syncCategoryHighlight(scrollX: Int) {
+        val offsets = emojiSectionOffsets
+        if (offsets.isEmpty()) return
+
+        var active = 0
+        for (i in offsets.indices) {
+            if (scrollX + emojiColWidth / 2 >= offsets[i]) active = i
+        }
+        if (active != selectedEmojiCategory) {
+            selectedEmojiCategory = active
+            for ((i, v) in emojiCategoryViews.withIndex()) {
+                v.background = if (i == active) roundedBg(COL_EMOJI_CAT_SEL, dp(8).toFloat()) else null
+            }
+        }
+    }
+
+    /**
+     * Category bar; tapping a category smoothly scrolls to it.
      */
     private fun buildEmojiCategoryBar(): LinearLayout {
         val catIcons = listOf(
@@ -628,12 +695,13 @@ class KeyboardView @JvmOverloads constructor(
             "\u2764\uFE0F"           // 6: hearts/symbols
         )
 
+        emojiCategoryViews.clear()
+
         return LinearLayout(context).apply {
             orientation = HORIZONTAL
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(44))
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(4), dp(4), dp(4))
-            /* no background - transparent */
 
             /* ABC button to dismiss */
             addView(TextView(context).apply {
@@ -647,7 +715,7 @@ class KeyboardView @JvmOverloads constructor(
                 setOnClickListener { hideEmojiPicker() }
             })
 
-            /* Category icons - horizontally scrollable */
+            /* Category icons */
             val catScroll = HorizontalScrollView(context).apply {
                 layoutParams = LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
                 isHorizontalScrollBarEnabled = false
@@ -658,7 +726,7 @@ class KeyboardView @JvmOverloads constructor(
                 layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)
             }
             for ((i, icon) in catIcons.withIndex()) {
-                catRow.addView(TextView(context).apply {
+                val tv = TextView(context).apply {
                     text = icon
                     textSize = 20f
                     gravity = Gravity.CENTER
@@ -668,12 +736,10 @@ class KeyboardView @JvmOverloads constructor(
                         roundedBg(COL_EMOJI_CAT_SEL, dp(8).toFloat())
                     } else null
                     isClickable = true; isFocusable = true
-                    setOnClickListener {
-                        selectedEmojiCategory = i
-                        /* re-show to update selection + grid */
-                        showEmojiPicker()
-                    }
-                })
+                    setOnClickListener { scrollToEmojiCategory(i) }
+                }
+                catRow.addView(tv)
+                emojiCategoryViews.add(tv)
             }
             catScroll.addView(catRow)
             addView(catScroll)
@@ -692,9 +758,37 @@ class KeyboardView @JvmOverloads constructor(
         }
     }
 
+    /** Smoothly scroll to the given emoji category. */
+    private fun scrollToEmojiCategory(catIndex: Int) {
+        val sv = emojiScrollView ?: return
+        if (catIndex < 0 || catIndex >= emojiSectionOffsets.size) return
+
+        selectedEmojiCategory = catIndex
+        val targetX = emojiSectionOffsets[catIndex]
+        val maxScroll = ((sv.getChildAt(0)?.width ?: sv.width) - sv.width).coerceAtLeast(0)
+        val clampedX = targetX.coerceIn(0, maxScroll)
+
+        val startX = sv.scrollX
+        emojiSnapAnimator?.cancel()
+        emojiSnapAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 350L
+            interpolator = DecelerateInterpolator(2.0f)
+            addUpdateListener { a ->
+                val f = a.animatedValue as Float
+                sv.scrollTo(startX + ((clampedX - startX) * f).toInt(), 0)
+            }
+            start()
+        }
+
+        /* Update highlighting immediately */
+        for ((i, v) in emojiCategoryViews.withIndex()) {
+            v.background = if (i == catIndex) roundedBg(COL_EMOJI_CAT_SEL, dp(8).toFloat()) else null
+        }
+    }
+
     /* Frequently-used emoji tracking via SharedPreferences */
     private val PREFS_EMOJI = "reword_emoji_freq"
-    private val MAX_RECENT = 28  // 4 rows x 7 cols = 1 page
+    private val MAX_RECENT = 40  // 5 rows x 8 cols
 
     private fun getFrequentEmojis(): List<String> {
         val prefs = context.getSharedPreferences(PREFS_EMOJI, Context.MODE_PRIVATE)
