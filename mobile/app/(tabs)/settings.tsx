@@ -295,7 +295,10 @@ export default function SettingsScreen() {
                       await apiDelete('/v1/user/delete');
                       logout();
                       Alert.alert('Данные удалены', 'Все ваши данные были удалены.', [
-                        { text: 'OK' },
+                        {
+                          text: 'OK',
+                          onPress: () => router.replace('/auth/sign-in'),
+                        },
                       ]);
                     } catch {
                       Alert.alert('Ошибка', 'Не удалось удалить данные. Попробуйте позже.', [

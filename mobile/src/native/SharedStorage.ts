@@ -43,31 +43,61 @@ interface ParaphraseEntry {
 }
 
 class SharedStorageClass {
+  /**
+   * Guard: throws a descriptive error if native module is unavailable.
+   * Every public method should call this before accessing NativeModule.
+   */
+  private ensureAvailable(): void {
+    if (!NativeModule) {
+      throw new Error(
+        'SharedStorage native module is not available. ' +
+        'This is expected in Expo Go; methods are no-ops there.'
+      );
+    }
+  }
+
+  /**
+   * Safely call a native method, returning `fallback` when the module is missing.
+   */
+  private async safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+    if (!NativeModule) return fallback;
+    try {
+      return await fn();
+    } catch (e) {
+      console.warn('[SharedStorage] Native call failed:', e);
+      return fallback;
+    }
+  }
+
   // MARK: - Authentication
 
   async setAuthToken(token: string): Promise<boolean> {
-    return NativeModule.setAuthToken(token);
+    return this.safe(() => NativeModule.setAuthToken(token), false);
   }
 
   async getAuthToken(): Promise<string | null> {
-    return NativeModule.getAuthToken();
+    return this.safe(() => NativeModule.getAuthToken(), null);
   }
 
   async setAuthData(data: AuthData): Promise<boolean> {
-    return NativeModule.setAuthData(
-      data.token,
-      data.refreshToken || null,
-      data.expiryTimestamp,
-      data.userId
+    return this.safe(
+      () =>
+        NativeModule.setAuthData(
+          data.token,
+          data.refreshToken || null,
+          data.expiryTimestamp,
+          data.userId
+        ),
+      false,
     );
   }
 
   async clearAuthData(): Promise<boolean> {
-    return NativeModule.clearAuthData();
+    return this.safe(() => NativeModule.clearAuthData(), false);
   }
 
   async isAuthenticated(): Promise<boolean> {
-    return NativeModule.isAuthenticated();
+    return this.safe(() => NativeModule.isAuthenticated(), false);
   }
 
   // MARK: - API Configuration
@@ -89,31 +119,31 @@ class SharedStorageClass {
   // MARK: - Preferences
 
   async setSelectedMode(mode: 'lite' | 'moderate' | 'creative'): Promise<boolean> {
-    return NativeModule.setSelectedMode(mode);
+    return this.safe(() => NativeModule.setSelectedMode(mode), false);
   }
 
   async getSelectedMode(): Promise<string> {
-    return NativeModule.getSelectedMode();
+    return this.safe(() => NativeModule.getSelectedMode(), 'moderate');
   }
 
   async setAutoCorrect(enabled: boolean): Promise<boolean> {
-    return NativeModule.setAutoCorrect(enabled);
+    return this.safe(() => NativeModule.setAutoCorrect(enabled), false);
   }
 
   async getAutoCorrect(): Promise<boolean> {
-    return NativeModule.getAutoCorrect();
+    return this.safe(() => NativeModule.getAutoCorrect(), true);
   }
 
   async setSoundEnabled(enabled: boolean): Promise<boolean> {
-    return NativeModule.setSoundEnabled(enabled);
+    return this.safe(() => NativeModule.setSoundEnabled(enabled), false);
   }
 
   async setHapticEnabled(enabled: boolean): Promise<boolean> {
-    return NativeModule.setHapticEnabled(enabled);
+    return this.safe(() => NativeModule.setHapticEnabled(enabled), false);
   }
 
   async setShowSuggestions(enabled: boolean): Promise<boolean> {
-    return NativeModule.setShowSuggestions(enabled);
+    return this.safe(() => NativeModule.setShowSuggestions(enabled), false);
   }
 
   async setCloudEnabled(enabled: boolean): Promise<boolean> {
@@ -125,45 +155,59 @@ class SharedStorageClass {
   }
 
   async getPreferences(): Promise<Preferences> {
-    return NativeModule.getPreferences();
+    return this.safe(() => NativeModule.getPreferences(), {
+      selectedMode: 'moderate',
+      autoCorrect: true,
+      soundEnabled: true,
+      hapticEnabled: true,
+      showSuggestions: true,
+    });
   }
 
   // MARK: - Subscription
 
   async setIsPremium(isPremium: boolean): Promise<boolean> {
-    return NativeModule.setIsPremium(isPremium);
+    return this.safe(() => NativeModule.setIsPremium(isPremium), false);
   }
 
   async getIsPremium(): Promise<boolean> {
-    return NativeModule.getIsPremium();
+    return this.safe(() => NativeModule.getIsPremium(), false);
   }
 
   async setDailyLimit(limit: number): Promise<boolean> {
-    return NativeModule.setDailyLimit(limit);
+    return this.safe(() => NativeModule.setDailyLimit(limit), false);
   }
 
   async getRemainingQuota(): Promise<number> {
-    return NativeModule.getRemainingQuota();
+    return this.safe(() => NativeModule.getRemainingQuota(), 0);
   }
 
   async getSubscriptionInfo(): Promise<SubscriptionInfo> {
-    return NativeModule.getSubscriptionInfo();
+    return this.safe(() => NativeModule.getSubscriptionInfo(), {
+      isPremium: false,
+      dailyLimit: 30,
+      remainingQuota: 0,
+    });
   }
 
   // MARK: - Usage Stats
 
   async getUsageStats(): Promise<UsageStats> {
-    return NativeModule.getUsageStats();
+    return this.safe(() => NativeModule.getUsageStats(), {
+      totalParaphrases: 0,
+      dailyParaphrases: 0,
+      remainingQuota: 0,
+    });
   }
 
   async incrementUsage(): Promise<boolean> {
-    return NativeModule.incrementUsage();
+    return this.safe(() => NativeModule.incrementUsage(), false);
   }
 
   // MARK: - Cache
 
   async getRecentParaphrases(): Promise<ParaphraseEntry[]> {
-    return NativeModule.getRecentParaphrases();
+    return this.safe(() => NativeModule.getRecentParaphrases(), []);
   }
 
   async addRecentParaphrase(
@@ -171,35 +215,38 @@ class SharedStorageClass {
     result: string,
     mode: string
   ): Promise<boolean> {
-    return NativeModule.addRecentParaphrase(original, result, mode);
+    return this.safe(
+      () => NativeModule.addRecentParaphrase(original, result, mode),
+      false,
+    );
   }
 
   async getCustomDictionary(): Promise<string[]> {
-    return NativeModule.getCustomDictionary();
+    return this.safe(() => NativeModule.getCustomDictionary(), []);
   }
 
   async addToDictionary(word: string): Promise<boolean> {
-    return NativeModule.addToDictionary(word);
+    return this.safe(() => NativeModule.addToDictionary(word), false);
   }
 
   // MARK: - Generic Key-Value
 
   async setValue(key: string, value: string | number | boolean | null): Promise<boolean> {
-    return NativeModule.setValue(key, value);
+    return this.safe(() => NativeModule.setValue(key, value), false);
   }
 
   async getValue<T = unknown>(key: string): Promise<T | null> {
-    return NativeModule.getValue(key);
+    return this.safe(() => NativeModule.getValue(key), null);
   }
 
   async getAllKeys(): Promise<string[]> {
-    return NativeModule.getAllKeys();
+    return this.safe(() => NativeModule.getAllKeys(), []);
   }
 
   // MARK: - Utility
 
   async clearAll(): Promise<boolean> {
-    return NativeModule.clearAll();
+    return this.safe(() => NativeModule.clearAll(), false);
   }
 
   /**

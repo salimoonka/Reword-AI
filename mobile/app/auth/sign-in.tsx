@@ -464,9 +464,19 @@ export default function SignInScreen() {
       {/* Terms */}
       <Text style={[styles.legalText, { color: isDarkMode ? '#555' : '#AAA' }]}>
         Продолжая, вы принимаете{' '}
-        <Text style={{ color: colors.accent.primary }}>условия использования</Text>
+        <Text
+          style={{ color: colors.accent.primary }}
+          onPress={() => WebBrowser.openBrowserAsync('https://reword-website.onrender.com/terms')}
+        >
+          условия использования
+        </Text>
         {' '}и{' '}
-        <Text style={{ color: colors.accent.primary }}>политику конфиденциальности</Text>
+        <Text
+          style={{ color: colors.accent.primary }}
+          onPress={() => WebBrowser.openBrowserAsync('https://reword-website.onrender.com/privacy')}
+        >
+          политику конфиденциальности
+        </Text>
       </Text>
     </View>
   );

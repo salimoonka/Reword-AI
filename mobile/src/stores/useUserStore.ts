@@ -38,7 +38,7 @@ async function syncTokensToNative(
   }
 }
 
-/** Sync API base URL to native SharedStorage */
+/** Sync API base URL and Supabase anon key to native SharedStorage */
 async function syncApiBaseUrl() {
   try {
     if (!NativeSharedStorage?.setApiBaseUrl) return;
@@ -46,6 +46,12 @@ async function syncApiBaseUrl() {
     const baseUrl =
       process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
     await NativeSharedStorage.setApiBaseUrl(baseUrl);
+
+    // Also sync the Supabase anon key so the native keyboard can send the apikey header
+    const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+    if (anonKey && NativeSharedStorage?.setValue) {
+      await NativeSharedStorage.setValue('supabase_anon_key', anonKey);
+    }
   } catch (e) {
     console.warn('[useUserStore] Failed to sync API URL to native:', e);
   }
@@ -127,10 +133,11 @@ export const useUserStore = create<UserState>()(
     {
       name: 'reword-ai-user',
       storage: createJSONStorage(() => AsyncStorage),
+      // Only persist non-sensitive data. Auth tokens are stored in
+      // expo-secure-store (see services/supabase/auth.ts) and restored
+      // via initAuth() at app startup — never saved to AsyncStorage.
       partialize: (state) => ({
         user: state.user,
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
       }),
     }
   )

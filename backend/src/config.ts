@@ -53,10 +53,15 @@ function getEnvOrDefault(key: string, defaultValue: string): string {
   return process.env[key] || defaultValue;
 }
 
-// For development, allow missing service key with warning
-function getEnvOrWarn(key: string, defaultValue: string): string {
+/**
+ * In production, require the env var to be set; in dev, warn and use default.
+ */
+function getEnvRequired(key: string, defaultValue: string): string {
   const value = process.env[key];
   if (!value || value.includes('your-')) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(`FATAL: Required environment variable ${key} is not set. Aborting.`);
+    }
     console.warn(`⚠️  Warning: ${key} not properly set. Some features may not work.`);
     return defaultValue;
   }
@@ -69,13 +74,13 @@ export const config: Config = {
   host: getEnvOrDefault('HOST', '0.0.0.0'),
 
   supabase: {
-    url: getEnvOrDefault('SUPABASE_URL', 'https://wlmfsohrvcxatgnwezfy.supabase.co'),
-    serviceKey: getEnvOrWarn('SUPABASE_SERVICE_KEY', ''),
+    url: getEnvRequired('SUPABASE_URL', 'https://wlmfsohrvcxatgnwezfy.supabase.co'),
+    serviceKey: getEnvRequired('SUPABASE_SERVICE_KEY', ''),
     anonKey: getEnvOrDefault('SUPABASE_ANON_KEY', ''),
   },
 
   openRouter: {
-    apiKey: getEnvOrDefault('OPENROUTER_API_KEY', ''),
+    apiKey: getEnvRequired('OPENROUTER_API_KEY', ''),
     baseUrl: getEnvOrDefault('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
   },
 

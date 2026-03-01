@@ -5,9 +5,55 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
+import { createHmac } from 'crypto';
 import { supabaseAdmin } from '../../services/supabase/client.js';
 import { updateSubscription } from '../../services/subscription/service.js';
 import logger from '../../services/logging/logger.js';
+import config from '../../config.js';
+
+// YooKassa official notification IP ranges (https://yookassa.ru/developers/using-api/webhooks)
+const YOOKASSA_IP_RANGES = [
+  '185.71.76.',
+  '185.71.77.',
+  '77.75.153.',
+  '77.75.156.',
+  '77.75.157.',
+  '2a02:5180:',
+];
+
+/**
+ * Verify the webhook originated from YooKassa by checking the source IP.
+ * Returns true when the IP belongs to a known YooKassa range or when
+ * running behind a trusted proxy that sets X-Forwarded-For.
+ */
+function isYooKassaIP(ip: string | undefined): boolean {
+  if (!ip) return false;
+  // Strip IPv6-mapped IPv4 prefix
+  const normalizedIp = ip.replace('::ffff:', '');
+  return YOOKASSA_IP_RANGES.some((prefix) => normalizedIp.startsWith(prefix));
+}
+
+/**
+ * Verify YooKassa webhook notification authenticity using HMAC-SHA256.
+ * YooKassa signs the request body with the secret key from the shop settings.
+ */
+function verifyYooKassaSignature(
+  rawBody: string,
+  signature: string | undefined,
+  secretKey: string
+): boolean {
+  if (!signature || !secretKey) return false;
+  const expectedSignature = createHmac('sha256', secretKey)
+    .update(rawBody)
+    .digest('hex');
+  // Timing-safe comparison
+  if (signature.length !== expectedSignature.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < signature.length; i++) {
+    mismatch |= signature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
 
 // Webhook event types from YooKassa
 interface YooKassaWebhookBody {
@@ -53,6 +99,32 @@ const webhooksRoute: FastifyPluginAsync = async (fastify) => {
       },
     },
     handler: async (request, reply) => {
+      // ── Security: verify webhook authenticity ──────────────────
+      const callerIp = request.ip;
+      const signature = request.headers['x-yookassa-signature'] as string | undefined;
+      const secretKey = config.yookassa.secretKey;
+
+      // 1. IP allow-list check (primary defence)
+      if (config.nodeEnv === 'production' && !isYooKassaIP(callerIp)) {
+        logger.warn({
+          event: 'yookassa_webhook_rejected_ip',
+          ip: callerIp,
+        });
+        return reply.status(403).send({ error: 'Forbidden' });
+      }
+
+      // 2. HMAC signature check (secondary defence, when secret is configured)
+      if (secretKey) {
+        const rawBody = JSON.stringify(request.body);
+        if (!verifyYooKassaSignature(rawBody, signature, secretKey)) {
+          logger.warn({
+            event: 'yookassa_webhook_invalid_signature',
+            ip: callerIp,
+          });
+          return reply.status(403).send({ error: 'Invalid signature' });
+        }
+      }
+
       const body = request.body as YooKassaWebhookBody;
 
       logger.info({

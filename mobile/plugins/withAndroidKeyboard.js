@@ -56,6 +56,7 @@ function addKeyboardService(config) {
     };
     ensurePerm('android.permission.INTERNET');
     ensurePerm('android.permission.VIBRATE');
+    ensurePerm('android.permission.RECORD_AUDIO');
     manifest.manifest['uses-permission'] = perms;
 
     // --- Service -------------------------------------------------------

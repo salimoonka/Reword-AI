@@ -20,7 +20,13 @@ class APIService(private val context: Context) {
     // Read from SharedPreferences — MUST match SharedStorage.PREFS_NAME
     private val PREFS_NAME = "reword_shared_prefs"
 
-    private val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsbWZzb2hydmN4YXRnbndlemZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzNjExMDEsImV4cCI6MjA4NjkzNzEwMX0.SDX9qdpqz2_vX9iN5hxqCR6BYF1LbMBQ7fxak3npLUo"
+    // Read Supabase anon key from SharedPreferences (synced by the RN app)
+    // instead of hardcoding it in source code.
+    private val supabaseAnonKey: String
+        get() {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getString("supabase_anon_key", "") ?: ""
+        }
 
     private val baseURL: String
         get() {
@@ -84,7 +90,7 @@ class APIService(private val context: Context) {
                 if (!token.isNullOrEmpty()) {
                     setRequestProperty("Authorization", "Bearer $token")
                 }
-                setRequestProperty("apikey", SUPABASE_ANON_KEY)
+                setRequestProperty("apikey", supabaseAnonKey)
                 connectTimeout = 30000
                 readTimeout = 30000
                 doInput = true

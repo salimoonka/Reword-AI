@@ -25,9 +25,22 @@ async function start() {
       contentSecurityPolicy: false,
     });
 
-    // CORS — allow mobile app from any origin (deep link scheme + Expo Go)
+    // CORS — restrict to known origins in production
+    const allowedOrigins = [
+      'https://reword-website.onrender.com',
+      'https://reword-ai.onrender.com',
+    ];
     await fastify.register(cors, {
-      origin: true,
+      origin: config.nodeEnv === 'production'
+        ? (origin, cb) => {
+            // Allow requests with no Origin header (mobile apps, curl, etc.)
+            if (!origin || allowedOrigins.includes(origin)) {
+              cb(null, true);
+            } else {
+              cb(new Error('Not allowed by CORS'), false);
+            }
+          }
+        : true, // Allow all origins in development
       credentials: true,
     });
 

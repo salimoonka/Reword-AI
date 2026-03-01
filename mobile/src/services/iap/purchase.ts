@@ -341,12 +341,6 @@ async function handlePurchaseUpdate(purchase: Purchase): Promise<void> {
     // Verify receipt with our server
     const result = await verifyReceipt(purchase);
 
-    // Finish the transaction (subscription = non-consumable)
-    await finishTransaction({
-      purchase,
-      isConsumable: false,
-    });
-
     currentCallbacks.onReceiptVerified?.(result);
     currentCallbacks.onPurchaseSuccess?.(purchase);
   } catch (error) {
@@ -354,6 +348,16 @@ async function handlePurchaseUpdate(purchase: Purchase): Promise<void> {
     currentCallbacks.onReceiptVerificationFailed?.(
       error instanceof Error ? error : new Error('Ошибка верификации чека')
     );
+  } finally {
+    // Always finish the transaction so the store doesn't keep prompting
+    try {
+      await finishTransaction({
+        purchase,
+        isConsumable: false,
+      });
+    } catch (finishErr) {
+      console.error('[IAP] finishTransaction failed:', finishErr);
+    }
   }
 }
 

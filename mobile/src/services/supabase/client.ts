@@ -12,6 +12,14 @@ const SUPABASE_URL =
 const SUPABASE_ANON_KEY =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
+if (!SUPABASE_ANON_KEY) {
+  throw new Error(
+    'EXPO_PUBLIC_SUPABASE_ANON_KEY is not set. ' +
+    'Supabase client cannot be initialized without an anon key. ' +
+    'Check your environment variables or eas.json.'
+  );
+}
+
 /**
  * Custom storage adapter using expo-secure-store.
  * Supabase JS stores its session under its own keys; we sync

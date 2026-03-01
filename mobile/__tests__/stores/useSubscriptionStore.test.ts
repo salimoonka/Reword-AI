@@ -35,7 +35,7 @@ describe('useSubscriptionStore', () => {
       expect(state.tier).toBe('free');
       expect(state.isActive).toBe(false);
       expect(state.isPremium).toBe(false);
-      expect(state.paraphrasesLimit).toBe(5);
+      expect(state.paraphrasesLimit).toBe(30);
     });
 
     it('should set pro subscription with active expiry', () => {

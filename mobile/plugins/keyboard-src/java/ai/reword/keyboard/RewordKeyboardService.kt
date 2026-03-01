@@ -14,8 +14,13 @@
 package ai.reword.keyboard
 
 import android.inputmethodservice.InputMethodService
+import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -42,6 +47,8 @@ class RewordKeyboardService :
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val apiService by lazy { APIService(applicationContext) }
     private val suggestionProvider by lazy { SuggestionProvider.getInstance(applicationContext) }
+    private var speechRecognizer: SpeechRecognizer? = null
+    private var isListening = false
 
     /* ═══════ Long-press delete repeat ═══════════════════════ */
     private val deleteHandler = Handler(Looper.getMainLooper())
@@ -67,6 +74,13 @@ class RewordKeyboardService :
     /* ═══════ Lifecycle ═══════════════════════════════════════ */
 
     override fun onCreateInputView(): View {
+        /* Restore persisted mode */
+        val savedMode = applicationContext.getSharedPreferences("reword_shared_prefs", MODE_PRIVATE)
+            .getString("selected_mode", null)
+        if (savedMode != null) {
+            try { currentMode = ParaphraseMode.valueOf(savedMode) } catch (_: Exception) {}
+        }
+
         keyboardView = KeyboardView(this).apply {
             listener = this@RewordKeyboardService
             setMode(currentMode)
@@ -89,6 +103,9 @@ class RewordKeyboardService :
     override fun onDestroy() {
         super.onDestroy()
         stopDeleteRepeat()
+        stopVoiceInput()
+        speechRecognizer?.destroy()
+        speechRecognizer = null
         serviceScope.cancel()
     }
 
@@ -232,18 +249,84 @@ class RewordKeyboardService :
     }
 
     override fun onVoiceInputPressed() {
-        try {
-            val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                    android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE,
-                    if (keyboardView.isEnglishLayout) "en-US" else "ru-RU")
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(intent)
-        } catch (e: Exception) {
-            android.widget.Toast.makeText(this, "Voice input not available", android.widget.Toast.LENGTH_SHORT).show()
+        if (isListening) {
+            stopVoiceInput()
+            return
         }
+
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            android.widget.Toast.makeText(this, "Голосовой ввод недоступен", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        try {
+            if (speechRecognizer == null) {
+                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            }
+
+            speechRecognizer?.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) {
+                    isListening = true
+                    android.widget.Toast.makeText(
+                        this@RewordKeyboardService, "Говорите...", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                override fun onBeginningOfSpeech() {}
+                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onBufferReceived(buffer: ByteArray?) {}
+                override fun onEndOfSpeech() { isListening = false }
+                override fun onError(error: Int) {
+                    isListening = false
+                    val msg = when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH -> "Речь не распознана"
+                        SpeechRecognizer.ERROR_AUDIO -> "Ошибка микрофона"
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Ошибка сети"
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Нет разрешения на микрофон"
+                        else -> "Ошибка голосового ввода"
+                    }
+                    android.widget.Toast.makeText(
+                        this@RewordKeyboardService, msg, android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+                override fun onResults(results: Bundle?) {
+                    isListening = false
+                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                    val text = matches?.firstOrNull()
+                    if (!text.isNullOrBlank()) {
+                        val ic = currentInputConnection ?: return
+                        ic.beginBatchEdit()
+                        ic.commitText(text, 1)
+                        ic.endBatchEdit()
+                    }
+                }
+                override fun onPartialResults(partialResults: Bundle?) {
+                    val partial = partialResults
+                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()
+                    // Could show partial text in suggestion strip if desired
+                }
+                override fun onEvent(eventType: Int, params: Bundle?) {}
+            })
+
+            val intent = android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE,
+                    if (keyboardView.isEnglishLayout) "en-US" else "ru-RU")
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            }
+            speechRecognizer?.startListening(intent)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(this, "Ошибка голосового ввода", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun stopVoiceInput() {
+        try {
+            speechRecognizer?.stopListening()
+        } catch (_: Exception) {}
+        isListening = false
     }
 
     /* SuggestionStripListener (legacy compat) */
@@ -261,11 +344,26 @@ class RewordKeyboardService :
 
     private fun updateSuggestions() {
         val ic = currentInputConnection ?: return
-        val before = ic.getTextBeforeCursor(50, 0)?.toString() ?: ""
-        val word = before.split(Regex("\\s+")).lastOrNull() ?: ""
-        if (word.length >= 2) {
-            val list = suggestionProvider.getSuggestions(word, 5)
+        val before = ic.getTextBeforeCursor(100, 0)?.toString() ?: ""
+        val words = before.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val currentWord = words.lastOrNull() ?: ""
+        val previousWord = if (words.size >= 2) words[words.size - 2] else null
+
+        // After a space (current word is empty), show next-word predictions
+        if (before.endsWith(" ") && previousWord != null) {
+            val predictions = suggestionProvider.getNextWordPredictions(previousWord, 5)
+            if (predictions.isNotEmpty()) {
+                keyboardView.updateSuggestions(predictions)
+                return
+            }
+        }
+
+        if (currentWord.length >= 2) {
+            val list = suggestionProvider.getSuggestionsWithContext(currentWord, previousWord, 5)
             keyboardView.updateSuggestions(list)
+        } else if (currentWord.isEmpty() && previousWord != null) {
+            val predictions = suggestionProvider.getNextWordPredictions(previousWord, 5)
+            keyboardView.updateSuggestions(predictions)
         } else {
             keyboardView.clearSuggestions()
         }

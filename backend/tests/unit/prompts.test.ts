@@ -13,6 +13,7 @@ import {
 
 const ALL_MODES: ParaphraseMode[] = [
   'paraphrase',
+  'correction',
   'shorten',
   'expand',
   'formal',
@@ -44,8 +45,8 @@ describe('LLM Prompts', () => {
   });
 
   describe('MODE_INSTRUCTIONS', () => {
-    it('should have instructions for all 9 modes', () => {
-      expect(Object.keys(MODE_INSTRUCTIONS).length).toBe(9);
+    it('should have instructions for all 10 modes', () => {
+      expect(Object.keys(MODE_INSTRUCTIONS).length).toBe(10);
     });
 
     it.each(ALL_MODES)('should have non-empty instruction for mode: %s', (mode) => {

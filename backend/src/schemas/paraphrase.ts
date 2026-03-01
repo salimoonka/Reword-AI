@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 export const paraphraseModeSchema = z.enum([
   'paraphrase',
+  'correction',
   'shorten',
   'expand',
   'formal',

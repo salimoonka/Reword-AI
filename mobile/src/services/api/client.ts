@@ -20,6 +20,13 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 // Check if we're in development mode (Expo Go / local dev server)
 const IS_DEV = __DEV__ || process.env.NODE_ENV === 'development';
 
+// Warn loudly if production build has no API URL configured
+if (!IS_DEV && (!process.env.EXPO_PUBLIC_API_URL || API_BASE_URL.includes('localhost'))) {
+  console.error(
+    '[API Client] CRITICAL: EXPO_PUBLIC_API_URL is not set or points to localhost in a production build!'
+  );
+}
+
 // Log API configuration in dev
 if (IS_DEV) {
   console.log('[API Client] Base URL:', API_BASE_URL);
@@ -82,13 +89,24 @@ apiClient.interceptors.request.use(
 // Track if we're currently refreshing to avoid loops
 let isRefreshing = false;
 let refreshSubscribers: Array<(token: string) => void> = [];
+let refreshFailSubscribers: Array<(error: Error) => void> = [];
 
 function subscribeToRefresh(cb: (token: string) => void) {
   refreshSubscribers.push(cb);
 }
 
+function subscribeToRefreshFail(cb: (error: Error) => void) {
+  refreshFailSubscribers.push(cb);
+}
+
 function onRefreshed(token: string) {
   refreshSubscribers.forEach((cb) => cb(token));
+  refreshSubscribers = [];
+}
+
+function onRefreshFailed(error: Error) {
+  refreshFailSubscribers.forEach((cb) => cb(error));
+  refreshFailSubscribers = [];
   refreshSubscribers = [];
 }
 
@@ -142,23 +160,31 @@ apiClient.interceptors.response.use(
             }
             return apiClient(originalRequest);
           } else {
-            // No refresh token — logout
+            // No refresh token — logout and reject queued requests
+            isRefreshing = false;
+            const err = new Error('No refresh token');
+            onRefreshFailed(err);
             useUserStore.getState().logout();
+            return Promise.reject(err);
           }
         } catch (refreshError) {
           isRefreshing = false;
-          refreshSubscribers = [];
+          const err = refreshError instanceof Error ? refreshError : new Error('Token refresh failed');
+          onRefreshFailed(err);
           useUserStore.getState().logout();
           return Promise.reject(refreshError);
         }
       } else {
         // Another refresh is in progress — queue this request
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           subscribeToRefresh((token: string) => {
             if (originalRequest.headers) {
               originalRequest.headers.Authorization = `Bearer ${token}`;
             }
             resolve(apiClient(originalRequest));
+          });
+          subscribeToRefreshFail((err: Error) => {
+            reject(err);
           });
         });
       }

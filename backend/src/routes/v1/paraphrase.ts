@@ -96,8 +96,8 @@ const paraphraseRoute: FastifyPluginAsync = async (fastify) => {
         error: errorMessage,
       });
 
-      // Log failed attempt
-      await logUsage(userId, {
+      // Log failed attempt (best-effort — never mask the original error)
+      logUsage(userId, {
         requestId: 'failed',
         action: 'paraphrase',
         mode,
@@ -105,6 +105,12 @@ const paraphraseRoute: FastifyPluginAsync = async (fastify) => {
         inputHash,
         success: false,
         errorCode: errorMessage.includes('temporarily unavailable') ? 'SERVICE_UNAVAILABLE' : 'INTERNAL_ERROR',
+      }).catch((logErr) => {
+        logger.warn({
+          event: 'log_usage_failed',
+          userId,
+          error: logErr instanceof Error ? logErr.message : 'Unknown',
+        });
       });
 
       if (errorMessage.includes('temporarily unavailable')) {

@@ -14,6 +14,7 @@
 package ai.reword.keyboard.views
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -59,19 +60,29 @@ class KeyboardView @JvmOverloads constructor(
     private var currentMode: ParaphraseMode = ParaphraseMode.PROFESSIONAL
     private var selectedEmojiCategory = 0  // 0 = frequent, 1..6 = data categories
 
-    /* Colours - uniform key colour for ALL keys */
-    private val COL_BG        = 0xFFD1D3D9.toInt()
-    private val COL_KEY       = 0xFFFFFFFF.toInt()
-    private val COL_KEY_PRESS = 0xFFBDBDBD.toInt()
-    private val COL_TEXT      = 0xFF000000.toInt()
-    private val COL_TEXT_SEC  = 0xFF555555.toInt()
-    private val COL_TOOLBAR   = 0xFFCFD2D8.toInt()
-    private val COL_BOTTOM    = 0xFFC0C4CB.toInt()
+    /* Theme detection */
+    private val isDarkTheme: Boolean =
+        (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
 
-    /* Emoji picker colours (light iOS-style) */
-    private val COL_EMOJI_BG      = 0xFFF0F0F3.toInt()
-    private val COL_EMOJI_SEARCH  = 0xFFE4E4E8.toInt()
-    private val COL_EMOJI_CAT_SEL = 0xFFD0D0D4.toInt()
+    /* Colours - theme-aware, Apple-keyboard-style */
+    private val COL_BG        = if (isDarkTheme) 0xFF1C1C1E.toInt() else 0xFFD1D3D9.toInt()
+    private val COL_KEY       = if (isDarkTheme) 0xFF3A3A3C.toInt() else 0xFFFFFFFF.toInt()
+    private val COL_KEY_PRESS = if (isDarkTheme) 0xFF545456.toInt() else 0xFFBDBDBD.toInt()
+    private val COL_TEXT      = if (isDarkTheme) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+    private val COL_TEXT_SEC  = if (isDarkTheme) 0xFFAAAAAA.toInt() else 0xFF555555.toInt()
+    private val COL_TOOLBAR   = COL_BG   // unified – no visual separation
+    private val COL_BOTTOM    = COL_BG   // unified – no visual separation
+
+    /* Emoji picker colours */
+    private val COL_EMOJI_BG      = if (isDarkTheme) 0xFF2C2C2E.toInt() else 0xFFF0F0F3.toInt()
+    private val COL_EMOJI_SEARCH  = if (isDarkTheme) 0xFF3A3A3C.toInt() else 0xFFE4E4E8.toInt()
+    private val COL_EMOJI_CAT_SEL = if (isDarkTheme) 0xFF48484A.toInt() else 0xFFD0D0D4.toInt()
+
+    /* Icon size in px for toolbar circular buttons */
+    private val ICON_SIZE_TB = dp(20)
+    /* Icon size for bottom bar */
+    private val ICON_SIZE_BB = dp(22)
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
@@ -152,12 +163,11 @@ class KeyboardView @JvmOverloads constructor(
             val btnSize = dp(36)
             val btnRadius = dp(18).toFloat()
 
-            /* LEFT: AI Menu - circular white, star icon */
-            addView(TextView(context).apply {
-                text = "\u2726"
-                textSize = 17f
-                setTextColor(COL_TEXT)
-                gravity = Gravity.CENTER
+            /* LEFT: AI Menu - circular, sparkle icon drawable */
+            addView(ImageView(context).apply {
+                val icon = KeyboardIcons.sparkle(COL_TEXT, ICON_SIZE_TB)
+                setImageDrawable(icon)
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = LayoutParams(btnSize, btnSize).apply { marginEnd = dp(8) }
                 background = roundedBg(COL_KEY, btnRadius)
                 isClickable = true; isFocusable = true
@@ -173,12 +183,11 @@ class KeyboardView @JvmOverloads constructor(
             }
             addView(suggestionBox)
 
-            /* RIGHT: Instant Check - circular white, check icon */
-            addView(TextView(context).apply {
-                text = "\u2713"
-                textSize = 18f
-                setTextColor(COL_TEXT)
-                gravity = Gravity.CENTER
+            /* RIGHT: Instant Check - circular, checkmark icon drawable */
+            addView(ImageView(context).apply {
+                val icon = KeyboardIcons.checkmark(COL_TEXT, ICON_SIZE_TB)
+                setImageDrawable(icon)
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = LayoutParams(btnSize, btnSize).apply { marginStart = dp(8) }
                 background = roundedBg(COL_KEY, btnRadius)
                 isClickable = true; isFocusable = true
@@ -231,19 +240,19 @@ class KeyboardView @JvmOverloads constructor(
             }
             addView(symToggle!!)
 
-            /* Emoji */
-            addView(Button(context).apply {
-                text = "\uD83D\uDE0A"
-                textSize = 20f; isAllCaps = false
+            /* Emoji - smiley drawable instead of 😊 emoji */
+            addView(ImageView(context).apply {
+                setImageDrawable(KeyboardIcons.smiley(COL_TEXT, dp(24)))
+                scaleType = ImageView.ScaleType.CENTER
                 background = roundedBg(COL_KEY, dp(5).toFloat())
                 layoutParams = LayoutParams(dp(44), h).apply { setMargins(dp(2), 0, dp(2), 0) }
-                setPadding(0,0,0,0); minWidth = 0; minHeight = 0
+                isClickable = true; isFocusable = true
                 setOnClickListener { toggleEmojiPicker() }
             })
 
-            /* Space */
+            /* Space — no text label (clean Apple style) */
             spaceBtn = Button(context).apply {
-                text = "\u043F\u0440\u043E\u0431\u0435\u043B"
+                text = ""
                 textSize = 14f; setTextColor(COL_TEXT); isAllCaps = false
                 typeface = Typeface.DEFAULT
                 background = roundedBg(COL_KEY, dp(5).toFloat())
@@ -253,15 +262,36 @@ class KeyboardView @JvmOverloads constructor(
             }
             addView(spaceBtn!!)
 
-            /* Enter */
+            /* Enter — wider key with return-arrow drawable */
             enterBtn = Button(context).apply {
-                text = "\u21B5"
-                textSize = 22f; setTextColor(COL_TEXT)
+                text = ""
                 isAllCaps = false
                 background = roundedBg(COL_KEY, dp(5).toFloat())
-                layoutParams = LayoutParams(dp(50), h).apply { setMargins(dp(2), 0, dp(2), 0) }
+                layoutParams = LayoutParams(dp(72), h).apply { setMargins(dp(2), 0, dp(2), 0) }
                 setPadding(0,0,0,0); minWidth = 0; minHeight = 0
                 setOnClickListener { listener?.onEnterPressed() }
+            }
+            // Draw return-arrow icon on top of the button
+            enterBtn!!.post {
+                enterBtn?.let { btn ->
+                    val drawable = KeyboardIcons.returnArrow(COL_TEXT, dp(22))
+                    drawable.setBounds(0, 0, dp(22), dp(22))
+                    btn.setCompoundDrawables(null, null, null, null)
+                    btn.foreground = object : android.graphics.drawable.Drawable() {
+                        override fun draw(canvas: android.graphics.Canvas) {
+                            val cx = (btn.width - dp(22)) / 2f
+                            val cy = (btn.height - dp(22)) / 2f
+                            canvas.save()
+                            canvas.translate(cx, cy)
+                            drawable.draw(canvas)
+                            canvas.restore()
+                        }
+                        override fun setAlpha(a: Int) {}
+                        override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+                        @Suppress("OVERRIDE_DEPRECATION")
+                        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+                    }
+                }
             }
             addView(enterBtn!!)
         }
@@ -279,11 +309,10 @@ class KeyboardView @JvmOverloads constructor(
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(4), dp(16), dp(8))
 
-            /* Globe - language toggle */
-            addView(TextView(context).apply {
-                text = "\uD83C\uDF10"
-                textSize = 22f
-                gravity = Gravity.CENTER
+            /* Globe - language toggle (monochrome vector) */
+            addView(ImageView(context).apply {
+                setImageDrawable(KeyboardIcons.globe(COL_TEXT, ICON_SIZE_BB))
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = LayoutParams(dp(40), dp(40))
                 isClickable = true; isFocusable = true
                 setOnClickListener { listener?.onLanguageToggle() }
@@ -294,11 +323,10 @@ class KeyboardView @JvmOverloads constructor(
                 layoutParams = LayoutParams(0, 0, 1f)
             })
 
-            /* Mic - voice input */
-            addView(TextView(context).apply {
-                text = "\uD83C\uDFA4"
-                textSize = 22f
-                gravity = Gravity.CENTER
+            /* Mic - voice input (monochrome vector) */
+            addView(ImageView(context).apply {
+                setImageDrawable(KeyboardIcons.microphone(COL_TEXT, ICON_SIZE_BB))
+                scaleType = ImageView.ScaleType.CENTER
                 layoutParams = LayoutParams(dp(40), dp(40))
                 isClickable = true; isFocusable = true
                 setOnClickListener { listener?.onVoiceInputPressed() }
@@ -358,7 +386,7 @@ class KeyboardView @JvmOverloads constructor(
             }
         }
         symToggle?.text = if (isSymbolMode) (if (isEnglishLayout) "ABC" else "\u0410\u0411\u0412") else "123"
-        spaceBtn?.text = if (isEnglishLayout) "space" else "\u043F\u0440\u043E\u0431\u0435\u043B"
+        spaceBtn?.text = ""  // blank — Apple style
     }
 
     private fun activeKeys(): Array<Array<String>> = when {
@@ -802,12 +830,13 @@ class KeyboardView @JvmOverloads constructor(
     /* suggestions */
     fun updateSuggestions(list: List<String>) {
         suggestionBox.removeAllViews()
+        val chipBg = if (isDarkTheme) 0x33FFFFFF else 0x22000000
         for (word in list) {
             suggestionBox.addView(TextView(context).apply {
                 text = word; textSize = 14f; setTextColor(COL_TEXT)
                 gravity = Gravity.CENTER
                 setPadding(dp(10), dp(4), dp(10), dp(4))
-                background = roundedBg(0x22000000, dp(6).toFloat())
+                background = roundedBg(chipBg, dp(6).toFloat())
                 layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, dp(28)).apply {
                     setMargins(dp(3), 0, dp(3), 0)
                 }
@@ -824,6 +853,7 @@ class KeyboardView @JvmOverloads constructor(
         toolbar.visibility = GONE
         keysSection.visibility = GONE
         actionSection.visibility = GONE
+        bottomBar.visibility = GONE
         if (isEmojiMode) hideEmojiPicker()
         if (findViewWithTag<View>("ai_overlay") == null) {
             val ov = AIMenuOverlay(context).apply {
@@ -834,8 +864,7 @@ class KeyboardView @JvmOverloads constructor(
                     hideAIMenu()
                 }
             }
-            val idx = indexOfChild(bottomBar)
-            addView(ov, idx)
+            addView(ov)
         }
     }
 
@@ -844,6 +873,7 @@ class KeyboardView @JvmOverloads constructor(
         toolbar.visibility = VISIBLE
         keysSection.visibility = VISIBLE
         actionSection.visibility = VISIBLE
+        bottomBar.visibility = VISIBLE
     }
 
     fun setSuggestionStripListener(l: SuggestionStripListener) {}
@@ -942,6 +972,7 @@ class KeyboardView @JvmOverloads constructor(
 
 /* =================================================================
    AI MENU OVERLAY - Redesigned with generation workflow
+   Dark-mode aware, purple active state, mode persistence
    ================================================================= */
 class AIMenuOverlay @JvmOverloads constructor(
     context: Context,
@@ -952,10 +983,18 @@ class AIMenuOverlay @JvmOverloads constructor(
     var onDismiss: (() -> Unit)? = null
     var onGenerate: ((ParaphraseMode) -> Unit)? = null
 
-    private val C_BG   = 0xFFF0F0F0.toInt()
-    private val C_CARD = 0xFFFFFFFF.toInt()
-    private val C_TEXT = 0xFF000000.toInt()
-    private val C_SEL  = 0xFFE8EAFF.toInt()  // selected mode highlight
+    private val isDark: Boolean =
+        (context.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    private val C_BG   = if (isDark) 0xFF1C1C1E.toInt() else 0xFFF0F0F0.toInt()
+    private val C_CARD = if (isDark) 0xFF3A3A3C.toInt() else 0xFFFFFFFF.toInt()
+    private val C_TEXT = if (isDark) 0xFFFFFFFF.toInt() else 0xFF000000.toInt()
+    private val C_TEXT_SEC = if (isDark) 0xFFAAAAAA.toInt() else 0xFF888888.toInt()
+    /* Dark / vivid purple for active mode */
+    private val C_SEL  = if (isDark) 0xFF5E3F9E.toInt() else 0xFFE0D4F5.toInt()
+    private val C_SEL_TEXT = if (isDark) 0xFFFFFFFF.toInt() else 0xFF3A1F78.toInt()
 
     private var selectedMode: ParaphraseMode? = null
     private val modeViews = mutableListOf<TextView>()
@@ -971,15 +1010,18 @@ class AIMenuOverlay @JvmOverloads constructor(
         layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT)
         setPadding(dp(12), dp(8), dp(12), dp(12))
 
-        /* ---- Title bar: "Reword Ai" left | "Улучшить текст" center | round × right ---- */
+        /* Restore persisted mode if available */
+        selectedMode = loadPersistedMode()
+
+        /* ---- Title bar: "Reword Ai" left | "Улучшить текст" center | small round × right ---- */
         addView(FrameLayout(context).apply {
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(40))
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(36))
 
             /* Left: branding */
             addView(TextView(context).apply {
                 text = "Reword Ai"
                 textSize = 13f
-                setTextColor(0xFF888888.toInt())
+                setTextColor(C_TEXT_SEC)
                 typeface = Typeface.DEFAULT
                 gravity = Gravity.CENTER_VERTICAL
                 layoutParams = FrameLayout.LayoutParams(
@@ -1003,17 +1045,17 @@ class AIMenuOverlay @JvmOverloads constructor(
                 )
             })
 
-            /* Right: round close button with bold × */
-            val closeSize = dp(32)
+            /* Right: SMALLER close button (24dp circle) */
+            val closeSize = dp(24)
             addView(TextView(context).apply {
                 text = "\u2715"
-                textSize = 16f
-                setTextColor(0xFF444444.toInt())
+                textSize = 12f
+                setTextColor(if (isDark) 0xFFCCCCCC.toInt() else 0xFF444444.toInt())
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 layoutParams = FrameLayout.LayoutParams(closeSize, closeSize, Gravity.END or Gravity.CENTER_VERTICAL)
                 background = GradientDrawable().apply {
-                    setColor(0xFFDDDDDD.toInt())
+                    setColor(if (isDark) 0xFF48484A.toInt() else 0xFFDDDDDD.toInt())
                     cornerRadius = (closeSize / 2).toFloat()
                 }
                 isClickable = true; isFocusable = true
@@ -1023,13 +1065,13 @@ class AIMenuOverlay @JvmOverloads constructor(
 
         /* ---- Divider ---- */
         addView(View(context).apply {
-            setBackgroundColor(0xFFCCCCCC.toInt())
+            setBackgroundColor(if (isDark) 0xFF48484A.toInt() else 0xFFCCCCCC.toInt())
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 1).apply {
                 setMargins(0, dp(4), 0, dp(4))
             }
         })
 
-        /* ---- Mode buttons in 2 columns: "displayName emoji" format ---- */
+        /* ---- Mode buttons in 2 columns ---- */
         val modes = ParaphraseMode.values()
         var row: LinearLayout? = null
         for ((i, mode) in modes.withIndex()) {
@@ -1042,7 +1084,7 @@ class AIMenuOverlay @JvmOverloads constructor(
                 addView(row)
             }
             val modeView = TextView(context).apply {
-                text = "${mode.displayName} ${mode.emoji}"  // emoji AFTER text
+                text = "${mode.displayName} ${mode.emoji}"
                 textSize = 14f
                 setTextColor(C_TEXT)
                 gravity = Gravity.CENTER
@@ -1054,6 +1096,7 @@ class AIMenuOverlay @JvmOverloads constructor(
                 isClickable = true; isFocusable = true
                 setOnClickListener {
                     selectedMode = mode
+                    persistMode(mode)
                     updateModeHighlights()
                 }
             }
@@ -1061,7 +1104,10 @@ class AIMenuOverlay @JvmOverloads constructor(
             row?.addView(modeView)
         }
 
-        /* ---- Generate button (replaces old keyboard button) ---- */
+        /* Apply initial highlight */
+        updateModeHighlights()
+
+        /* ---- Generate button ---- */
         addView(LinearLayout(context).apply {
             orientation = HORIZONTAL
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(48))
@@ -1075,11 +1121,10 @@ class AIMenuOverlay @JvmOverloads constructor(
                 typeface = Typeface.DEFAULT_BOLD
                 gravity = Gravity.CENTER
                 setPadding(dp(24), dp(10), dp(24), dp(10))
-                /* Glass-effect: semi-transparent white with rounded corners */
                 background = GradientDrawable().apply {
-                    setColor(0xCCFFFFFF.toInt())
+                    setColor(if (isDark) 0x66FFFFFF else 0xCCFFFFFF.toInt())
                     cornerRadius = dp(14).toFloat()
-                    setStroke(1, 0x33000000)
+                    setStroke(1, if (isDark) 0x33FFFFFF else 0x33000000)
                 }
                 isClickable = true; isFocusable = true
                 setOnClickListener {
@@ -1100,7 +1145,20 @@ class AIMenuOverlay @JvmOverloads constructor(
                 if (isSelected) C_SEL else C_CARD,
                 dp(10).toFloat()
             )
+            tv.setTextColor(if (isSelected) C_SEL_TEXT else C_TEXT)
             tv.typeface = if (isSelected) Typeface.DEFAULT_BOLD else Typeface.DEFAULT
         }
+    }
+
+    /* ---- Mode persistence via SharedPreferences ---- */
+    private fun persistMode(mode: ParaphraseMode) {
+        context.getSharedPreferences("reword_shared_prefs", Context.MODE_PRIVATE)
+            .edit().putString("selected_mode", mode.name).apply()
+    }
+
+    private fun loadPersistedMode(): ParaphraseMode? {
+        val name = context.getSharedPreferences("reword_shared_prefs", Context.MODE_PRIVATE)
+            .getString("selected_mode", null) ?: return null
+        return try { ParaphraseMode.valueOf(name) } catch (_: Exception) { null }
     }
 }

@@ -12,11 +12,17 @@ const isSupabaseConfigured =
   config.supabase.serviceKey && 
   !config.supabase.serviceKey.includes('your-');
 
+if (!isSupabaseConfigured && config.nodeEnv === 'production') {
+  throw new Error(
+    'FATAL: Supabase is not properly configured (SUPABASE_URL / SUPABASE_SERVICE_KEY). ' +
+    'Cannot start in production without valid Supabase credentials.'
+  );
+}
+
 // Service role client - has full access, bypass RLS
-// Falls back to anon key if service key not set (limited functionality)
 export const supabaseAdmin: SupabaseClient = createClient(
-  config.supabase.url || 'https://placeholder.supabase.co',
-  config.supabase.serviceKey || config.supabase.anonKey || 'placeholder-key',
+  config.supabase.url,
+  config.supabase.serviceKey || config.supabase.anonKey,
   {
     auth: {
       autoRefreshToken: false,

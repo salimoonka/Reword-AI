@@ -68,7 +68,7 @@ const checkRoute: FastifyPluginAsync = async (fastify) => {
       // Call LLM for grammar check
       const llmResponse = await callLLMWithBreaker({
         text: maskingResult.maskedText,
-        mode: 'formal', // Use formal mode for grammar check
+        mode: 'correction', // Dedicated correction mode — fixes errors only, no reformulation
         maxLength: text.length + 500, // Allow slight expansion for corrections
       });
 
