@@ -39,32 +39,34 @@ object KeyboardIcons {
 
     /* -------- Microphone (voice input) -------- */
     fun microphone(color: Int, sizePx: Int): Drawable = object : Drawable() {
-        private val p = strokePaint(color, sizePx * 0.07f)
+        private val p = strokePaint(color, sizePx * 0.08f)
 
         override fun draw(canvas: Canvas) {
             val s = bounds.width().toFloat().coerceAtMost(bounds.height().toFloat())
             val cx = bounds.exactCenterX(); val cy = bounds.exactCenterY()
 
-            val headW = s * 0.16f
-            val headH = s * 0.30f
-            val headTop = cy - s * 0.32f
+            // Mic head capsule — proper proportions matching iOS mic icon
+            val headW = s * 0.19f     // half-width of capsule
+            val headH = s * 0.34f     // full height of capsule
+            val headTop = cy - s * 0.30f
 
-            // mic head (rounded rect)
             val headRect = RectF(cx - headW, headTop, cx + headW, headTop + headH)
             canvas.drawRoundRect(headRect, headW, headW, p)
 
-            // holder arc (below head)
-            val arcW = s * 0.26f
-            val arcBottom = headTop + headH + s * 0.10f
-            val arcRect = RectF(cx - arcW, headTop + headH * 0.35f, cx + arcW, arcBottom)
+            // U-shaped holder arc — wider than head, cups lower half
+            val arcW = s * 0.30f
+            val arcTop = headTop + headH * 0.38f
+            val arcBottom = headTop + headH + s * 0.13f
+            val arcRect = RectF(cx - arcW, arcTop, cx + arcW, arcBottom)
             canvas.drawArc(arcRect, 0f, 180f, false, p)
 
-            // stem
-            val stemBottom = arcBottom + s * 0.14f
+            // Stem
+            val stemBottom = arcBottom + s * 0.13f
             canvas.drawLine(cx, arcBottom, cx, stemBottom, p)
 
-            // base
-            canvas.drawLine(cx - s * 0.12f, stemBottom, cx + s * 0.12f, stemBottom, p)
+            // Base
+            val baseHalf = s * 0.14f
+            canvas.drawLine(cx - baseHalf, stemBottom, cx + baseHalf, stemBottom, p)
         }
 
         override fun setAlpha(a: Int) { p.alpha = a }
@@ -241,27 +243,31 @@ object KeyboardIcons {
         override fun getIntrinsicHeight() = sizePx
     }
 
-    /* -------- Shift arrow (outline) -------- */
+    /* -------- Shift arrow (bold, prominent — matches return arrow weight) -------- */
     fun shiftArrow(color: Int, sizePx: Int, filled: Boolean = false): Drawable = object : Drawable() {
         private val p = if (filled) {
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 this.color = color; style = Paint.Style.FILL_AND_STROKE
                 strokeWidth = sizePx * 0.04f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
             }
-        } else strokePaint(color, sizePx * 0.07f)
+        } else Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color; style = Paint.Style.STROKE
+            strokeWidth = sizePx * 0.10f   // thicker stroke for bold look
+            strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        }
 
         override fun draw(canvas: Canvas) {
             val s = bounds.width().toFloat().coerceAtMost(bounds.height().toFloat())
             val cx = bounds.exactCenterX(); val cy = bounds.exactCenterY()
 
             val path = Path().apply {
-                moveTo(cx, cy - s * 0.32f)
-                lineTo(cx + s * 0.28f, cy + s * 0.02f)
-                lineTo(cx + s * 0.15f, cy + s * 0.02f)
-                lineTo(cx + s * 0.15f, cy + s * 0.28f)
-                lineTo(cx - s * 0.15f, cy + s * 0.28f)
-                lineTo(cx - s * 0.15f, cy + s * 0.02f)
-                lineTo(cx - s * 0.28f, cy + s * 0.02f)
+                moveTo(cx, cy - s * 0.35f)              // top point
+                lineTo(cx + s * 0.32f, cy + s * 0.04f)  // right wing
+                lineTo(cx + s * 0.18f, cy + s * 0.04f)  // inner right
+                lineTo(cx + s * 0.18f, cy + s * 0.32f)  // bottom right
+                lineTo(cx - s * 0.18f, cy + s * 0.32f)  // bottom left
+                lineTo(cx - s * 0.18f, cy + s * 0.04f)  // inner left
+                lineTo(cx - s * 0.32f, cy + s * 0.04f)  // left wing
                 close()
             }
             canvas.drawPath(path, p)
@@ -282,5 +288,69 @@ object KeyboardIcons {
         strokeWidth = width
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
+    }
+
+    /* -------- Search magnifying glass (emoji search) -------- */
+    fun searchIcon(color: Int, sizePx: Int): Drawable = object : Drawable() {
+        private val p = strokePaint(color, sizePx * 0.08f)
+
+        override fun draw(canvas: Canvas) {
+            val s = bounds.width().toFloat().coerceAtMost(bounds.height().toFloat())
+            val cx = bounds.exactCenterX(); val cy = bounds.exactCenterY()
+
+            val lensR = s * 0.26f
+            val lensCx = cx - s * 0.06f
+            val lensCy = cy - s * 0.06f
+
+            // Lens circle
+            canvas.drawCircle(lensCx, lensCy, lensR, p)
+
+            // Handle (angled line from lower-right of circle)
+            val handleStart = lensR * 0.70f  // start at edge of circle (at 45°)
+            val handleLen = s * 0.22f
+            val cos45 = 0.707f
+            val sx = lensCx + handleStart * cos45
+            val sy = lensCy + handleStart * cos45
+            canvas.drawLine(sx, sy, sx + handleLen * cos45, sy + handleLen * cos45, p)
+        }
+
+        override fun setAlpha(a: Int) { p.alpha = a }
+        override fun setColorFilter(cf: ColorFilter?) { p.colorFilter = cf }
+        @Suppress("OVERRIDE_DEPRECATION")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+        override fun getIntrinsicWidth() = sizePx
+        override fun getIntrinsicHeight() = sizePx
+    }
+
+    /* -------- Clear circle (⊗ — for clearing search input) -------- */
+    fun clearCircle(color: Int, sizePx: Int): Drawable = object : Drawable() {
+        private val fillP = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = color; style = Paint.Style.FILL; alpha = 140
+        }
+        private val xP = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = Color.WHITE; style = Paint.Style.STROKE
+            strokeWidth = sizePx * 0.10f; strokeCap = Paint.Cap.ROUND
+        }
+
+        override fun draw(canvas: Canvas) {
+            val s = bounds.width().toFloat().coerceAtMost(bounds.height().toFloat())
+            val cx = bounds.exactCenterX(); val cy = bounds.exactCenterY()
+            val r = s * 0.40f
+
+            // Filled circle background
+            canvas.drawCircle(cx, cy, r, fillP)
+
+            // ✕ cross inside
+            val xr = r * 0.40f
+            canvas.drawLine(cx - xr, cy - xr, cx + xr, cy + xr, xP)
+            canvas.drawLine(cx + xr, cy - xr, cx - xr, cy + xr, xP)
+        }
+
+        override fun setAlpha(a: Int) { fillP.alpha = a; xP.alpha = a }
+        override fun setColorFilter(cf: ColorFilter?) { fillP.colorFilter = cf; xP.colorFilter = cf }
+        @Suppress("OVERRIDE_DEPRECATION")
+        override fun getOpacity() = PixelFormat.TRANSLUCENT
+        override fun getIntrinsicWidth() = sizePx
+        override fun getIntrinsicHeight() = sizePx
     }
 }

@@ -64,6 +64,9 @@ class SharedStorage private constructor(context: Context) {
             // Sync
             const val LAST_SYNC_TIME = "last_sync_time"
             const val PENDING_SYNC = "pending_sync"
+
+            // Theme (synced from React Native app)
+            const val THEME_MODE = "theme_mode"  // "auto" | "dark" | "light"
         }
     }
     
@@ -78,6 +81,13 @@ class SharedStorage private constructor(context: Context) {
     
     // MARK: - Authentication
     
+    // MARK: - Theme
+
+    /** App-chosen theme mode: "auto", "dark", "light". Falls back to "auto". */
+    var themeMode: String
+        get() = prefs.getString(Keys.THEME_MODE, "auto") ?: "auto"
+        set(value) = prefs.edit().putString(Keys.THEME_MODE, value).apply()
+
     var authToken: String?
         get() = prefs.getString(Keys.AUTH_TOKEN, null)
         set(value) = prefs.edit().putString(Keys.AUTH_TOKEN, value).apply()

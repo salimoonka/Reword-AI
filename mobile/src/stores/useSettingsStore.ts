@@ -53,12 +53,29 @@ function syncCloudEnabledToNative(enabled: boolean) {
   }
 }
 
+/**
+ * Sync themeMode to native shared storage so the keyboard extension
+ * can read the user's preference and apply correct dark/light colours.
+ */
+function syncThemeModeToNative(mode: ThemeMode) {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { SharedStorage } = require('../native/SharedStorage');
+    SharedStorage.setThemeMode(mode).catch(() => {});
+  } catch {
+    // Silently fail
+  }
+}
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       ...initialState,
 
-      setThemeMode: (mode) => set({ themeMode: mode }),
+      setThemeMode: (mode) => {
+        set({ themeMode: mode });
+        syncThemeModeToNative(mode);
+      },
       setCloudEnabled: (enabled) => {
         set({ cloudEnabled: enabled });
         syncCloudEnabledToNative(enabled);

@@ -10,18 +10,30 @@ import { useColorScheme } from 'react-native';
 import { getThemeColors, type Colors } from '@/theme/colors';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 
-export function useThemeColors(): Colors {
+/**
+ * Resolve current theme mode to a concrete 'dark' | 'light' value.
+ */
+function useResolvedScheme(): 'dark' | 'light' {
   const systemScheme = useColorScheme();
   const themeMode = useSettingsStore((s) => s.themeMode);
 
-  const resolved: 'dark' | 'light' =
-    themeMode === 'dark'
-      ? 'dark'
-      : themeMode === 'light'
+  return themeMode === 'dark'
+    ? 'dark'
+    : themeMode === 'light'
+      ? 'light'
+      : systemScheme === 'light'
         ? 'light'
-        : systemScheme === 'light'
-          ? 'light'
-          : 'dark';
+        : 'dark';
+}
 
-  return getThemeColors(resolved);
+export function useThemeColors(): Colors {
+  return getThemeColors(useResolvedScheme());
+}
+
+/**
+ * Returns true when the resolved theme is dark.
+ * Safe to use anywhere — respects store preference + system scheme.
+ */
+export function useIsDarkMode(): boolean {
+  return useResolvedScheme() === 'dark';
 }

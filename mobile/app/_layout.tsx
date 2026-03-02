@@ -8,12 +8,13 @@ import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
-import { useColorScheme, Alert } from 'react-native';
+import { useColorScheme, Alert, Appearance } from 'react-native';
+import { ThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
-import { colors } from '@/theme/colors';
+import { darkColors, lightColors } from '@/theme/colors';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initIAP, cleanupIAP, isUserCancelledError, type VerifyReceiptResponse } from '@/services/iap';
 import { initAuth } from '@/services/supabase/auth';
@@ -43,6 +44,49 @@ export default function RootLayout() {
   // Determine active theme
   const isDarkMode =
     themeMode === 'dark' || (themeMode === 'auto' && colorScheme === 'dark');
+
+  /**
+   * Force the system-wide color scheme to match the app's chosen theme.
+   * This prevents native Android / iOS components from using the phone's own
+   * theme when the user has explicitly picked a different one in the app.
+   */
+  useEffect(() => {
+    const scheme: 'dark' | 'light' | null =
+      themeMode === 'dark' ? 'dark' : themeMode === 'light' ? 'light' : null;
+    Appearance.setColorScheme(scheme);
+  }, [themeMode]);
+
+  /**
+   * Custom React-Navigation themes matching our palette so modal backgrounds,
+   * transition overlays and other framework-level UI pieces get the right colours.
+   */
+  const navTheme = isDarkMode
+    ? {
+        ...DarkTheme,
+        colors: {
+          ...DarkTheme.colors,
+          background: darkColors.background.primary,
+          card: darkColors.background.secondary,
+          text: darkColors.text.primary,
+          border: darkColors.border.primary,
+          primary: darkColors.accent.primary,
+          notification: darkColors.accent.primary,
+        },
+      }
+    : {
+        ...DefaultTheme,
+        colors: {
+          ...DefaultTheme.colors,
+          background: lightColors.background.primary,
+          card: lightColors.background.secondary,
+          text: lightColors.text.primary,
+          border: lightColors.border.primary,
+          primary: lightColors.accent.primary,
+          notification: lightColors.accent.primary,
+        },
+      };
+
+  const themeColors = isDarkMode ? darkColors : lightColors;
 
   useEffect(() => {
     // Hide splash screen only after auth state is determined
@@ -179,13 +223,14 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+    <ThemeProvider value={navTheme}>
     <ErrorBoundary>
       <StatusBar style={isDarkMode ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
           headerShown: false,
           contentStyle: {
-            backgroundColor: isDarkMode ? colors.background.primary : '#FFFFFF',
+            backgroundColor: themeColors.background.primary,
           },
           animation: 'slide_from_right',
         }}
@@ -202,6 +247,7 @@ export default function RootLayout() {
         />
       </Stack>
     </ErrorBoundary>
+    </ThemeProvider>
     </SafeAreaProvider>
   );
 }

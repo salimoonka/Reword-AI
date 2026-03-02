@@ -22,7 +22,7 @@ import { useSettingsStore, ThemeMode } from '@/stores/useSettingsStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
 import { useUserStore } from '@/stores/useUserStore';
 import { useKeyboardStatus } from '@/hooks/useKeyboardStatus';
-import { useThemeColors } from '@/hooks/useThemeColors';
+import { useThemeColors, useIsDarkMode } from '@/hooks/useThemeColors';
 import { apiDelete } from '@/services/api/client';
 import { spacing, typography, colors } from '@/theme';
 import { useMemo } from 'react';
@@ -59,6 +59,7 @@ const glass = (isDark: boolean) => ({
 
 export default function SettingsScreen() {
   const c = useThemeColors();
+  const isDark = useIsDarkMode();
   const {
     themeMode,
     setThemeMode,
@@ -70,7 +71,6 @@ export default function SettingsScreen() {
     useKeyboardStatus();
   const { logout, user, isAuthenticated } = useUserStore();
 
-  const isDark = c.background.primary === '#1A1A1A';
   const g = useMemo(() => glass(isDark), [isDark]);
   const s = useMemo(() => makeStyles(c, isDark), [c, isDark]);
 

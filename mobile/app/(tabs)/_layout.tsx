@@ -8,7 +8,8 @@ import { Tabs } from 'expo-router';
 import { useColorScheme, View, Text, StyleSheet, Platform, Pressable, Animated as RNAnimated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSettingsStore } from '@/stores/useSettingsStore';
-import { colors } from '@/theme/colors';
+import { useThemeColors } from '@/hooks/useThemeColors';
+import { useIsDarkMode } from '@/hooks/useThemeColors';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useRef, useEffect, useMemo } from 'react';
 
@@ -31,8 +32,8 @@ const BAR_RADIUS = 28;
 function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const colorScheme = useColorScheme();
   const { themeMode } = useSettingsStore();
-  const isDarkMode =
-    themeMode === 'dark' || (themeMode === 'auto' && colorScheme === 'dark');
+  const isDarkMode = useIsDarkMode();
+  const c = useThemeColors();
 
   const visibleRoutes = useMemo(
     () => state.routes.filter((r) => TAB_DEFS[r.name]),
@@ -89,7 +90,7 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
 
           const bgColor = anims[vIdx].interpolate({
             inputRange: [0, 1],
-            outputRange: ['transparent', colors.accent.muted],
+            outputRange: ['transparent', c.accent.muted],
           });
 
           return (
@@ -108,14 +109,14 @@ function FloatingTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 <Ionicons
                   name={focused ? def.iconFocused : def.icon}
                   size={20}
-                  color={focused ? colors.accent.primary : (isDarkMode ? '#808080' : '#999999')}
+                  color={focused ? c.accent.primary : (isDarkMode ? '#808080' : '#999999')}
                 />
                 <Text
                   style={[
                     styles.tabLabel,
                     {
                       color: focused
-                        ? colors.accent.primary
+                        ? c.accent.primary
                         : isDarkMode ? '#808080' : '#999999',
                       fontWeight: focused ? '700' : '500',
                     },

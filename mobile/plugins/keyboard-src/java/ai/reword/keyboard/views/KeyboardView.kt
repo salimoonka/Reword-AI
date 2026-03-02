@@ -60,13 +60,23 @@ class KeyboardView @JvmOverloads constructor(
     private var isSymbolMode = false
     private var symbolPage = 0
     private var isEmojiMode = false
+    private var isEmojiSearchMode = false
+    private var emojiSearchQuery = ""
     private var currentMode: ParaphraseMode = ParaphraseMode.PROFESSIONAL
     private var selectedEmojiCategory = 0  // 0 = frequent, 1..6 = data categories
 
-    /* Theme detection */
-    private val isDarkTheme: Boolean =
-        (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
+    /* Theme detection — prefers app's chosen mode from SharedPreferences;
+       falls back to system dark mode flag. */
+    private val isDarkTheme: Boolean = run {
+        val prefs = context.getSharedPreferences("reword_shared_prefs", Context.MODE_PRIVATE)
+        when (prefs.getString("theme_mode", "auto")) {
+            "dark"  -> true
+            "light" -> false
+            else    -> // "auto" — follow system
+                (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                        Configuration.UI_MODE_NIGHT_YES
+        }
+    }
 
     /* Colours - theme-aware, Apple-keyboard-style */
     private val COL_BG        = if (isDarkTheme) 0xFF1C1C1E.toInt() else 0xFFD1D3D9.toInt()
@@ -84,8 +94,8 @@ class KeyboardView @JvmOverloads constructor(
 
     /* Icon size in px for toolbar circular buttons */
     private val ICON_SIZE_TB = dp(20)
-    /* Icon size for bottom bar */
-    private val ICON_SIZE_BB = dp(22)
+    /* Icon size for bottom bar — matches emoji smiley icon (dp 24) */
+    private val ICON_SIZE_BB = dp(24)
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
@@ -134,6 +144,9 @@ class KeyboardView @JvmOverloads constructor(
     private var emojiSectionOffsets = intArrayOf()
     private var emojiColWidth = 0
     private var emojiSnapAnimator: ValueAnimator? = null
+    private var emojiSearchResultsRow: HorizontalScrollView? = null
+    private var emojiSearchTextView: TextView? = null
+    private var emojiSearchClearBtn: ImageView? = null
 
     /* ================================================================
        INIT
@@ -240,7 +253,7 @@ class KeyboardView @JvmOverloads constructor(
                 layoutParams = LayoutParams(dp(50), h).apply { setMargins(dp(2), 0, dp(2), 0) }
                 setPadding(0,0,0,0); minWidth = 0; minHeight = 0
                 setOnClickListener {
-                    if (isEmojiMode) hideEmojiPicker()
+                    if (isEmojiMode && !isEmojiSearchMode) hideEmojiPicker()
                     if (isSymbolMode) isSymbolMode = false
                     else { isSymbolMode = true; symbolPage = 0 }
                     applyLayout()
@@ -266,7 +279,14 @@ class KeyboardView @JvmOverloads constructor(
                 background = roundedBg(COL_KEY, dp(5).toFloat())
                 layoutParams = LayoutParams(0, h, 1f).apply { setMargins(dp(3), 0, dp(3), 0) }
                 setPadding(0,0,0,0); minWidth = 0; minHeight = 0
-                setOnClickListener { listener?.onSpacePressed() }
+                setOnClickListener {
+                    if (isEmojiSearchMode) {
+                        emojiSearchQuery += " "
+                        updateEmojiSearchDisplay()
+                    } else {
+                        listener?.onSpacePressed()
+                    }
+                }
             }
             addView(spaceBtn!!)
 
@@ -277,29 +297,17 @@ class KeyboardView @JvmOverloads constructor(
                 background = roundedBg(COL_KEY, dp(5).toFloat())
                 layoutParams = LayoutParams(dp(72), h).apply { setMargins(dp(2), 0, dp(2), 0) }
                 setPadding(0,0,0,0); minWidth = 0; minHeight = 0
-                setOnClickListener { listener?.onEnterPressed() }
+                setOnClickListener {
+                    if (isEmojiSearchMode) {
+                        exitEmojiSearchMode()
+                    } else {
+                        listener?.onEnterPressed()
+                    }
+                }
             }
             // Draw return-arrow icon on top of the button
             enterBtn!!.post {
-                enterBtn?.let { btn ->
-                    val drawable = KeyboardIcons.returnArrow(COL_TEXT, dp(22))
-                    drawable.setBounds(0, 0, dp(22), dp(22))
-                    btn.setCompoundDrawables(null, null, null, null)
-                    btn.foreground = object : android.graphics.drawable.Drawable() {
-                        override fun draw(canvas: android.graphics.Canvas) {
-                            val cx = (btn.width - dp(22)) / 2f
-                            val cy = (btn.height - dp(22)) / 2f
-                            canvas.save()
-                            canvas.translate(cx, cy)
-                            drawable.draw(canvas)
-                            canvas.restore()
-                        }
-                        override fun setAlpha(a: Int) {}
-                        override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
-                        @Suppress("OVERRIDE_DEPRECATION")
-                        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
-                    }
-                }
+                updateEnterButtonIcon()
             }
             addView(enterBtn!!)
         }
@@ -358,11 +366,29 @@ class KeyboardView @JvmOverloads constructor(
                     "SHIFT" -> {
                         btn.text = if (isCapsLocked) "\u21EA" else "\u21E7"
                         btn.textSize = 22f
+                        btn.setTextColor(android.graphics.Color.TRANSPARENT) // hide text, use icon
                         btn.background = roundedBg(shiftBgColor(), dp(5).toFloat())
-                        btn.setTextColor(COL_TEXT)
                         setWeight(btn, 1.4f)
+                        // Draw bold shift arrow icon via foreground
+                        val iconSize = dp(20)
+                        val icon = KeyboardIcons.shiftArrow(COL_TEXT, iconSize, filled = isCapsLocked || isShifted)
+                        icon.setBounds(0, 0, iconSize, iconSize)
+                        btn.foreground = object : android.graphics.drawable.Drawable() {
+                            override fun draw(canvas: android.graphics.Canvas) {
+                                val cx = (btn.width - iconSize) / 2f
+                                val cy = (btn.height - iconSize) / 2f
+                                canvas.save(); canvas.translate(cx, cy)
+                                icon.draw(canvas)
+                                canvas.restore()
+                            }
+                            override fun setAlpha(a: Int) {}
+                            override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+                            @Suppress("OVERRIDE_DEPRECATION")
+                            override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+                        }
                     }
                     "DEL" -> {
+                        btn.foreground = null
                         btn.text = "\u232B"
                         btn.textSize = 20f
                         btn.background = roundedBg(COL_KEY, dp(5).toFloat())
@@ -370,6 +396,7 @@ class KeyboardView @JvmOverloads constructor(
                         setWeight(btn, 1.3f)
                     }
                     "SYM2" -> {
+                        btn.foreground = null
                         btn.text = "#+="
                         btn.textSize = 14f
                         btn.background = roundedBg(COL_KEY, dp(5).toFloat())
@@ -377,6 +404,7 @@ class KeyboardView @JvmOverloads constructor(
                         setWeight(btn, 1.6f)
                     }
                     "NUM1" -> {
+                        btn.foreground = null
                         btn.text = "123"
                         btn.textSize = 14f
                         btn.background = roundedBg(COL_KEY, dp(5).toFloat())
@@ -384,6 +412,7 @@ class KeyboardView @JvmOverloads constructor(
                         setWeight(btn, 1.6f)
                     }
                     else -> {
+                        btn.foreground = null
                         btn.text = label
                         btn.textSize = 22f
                         btn.background = roundedBg(COL_KEY, dp(5).toFloat())
@@ -409,8 +438,8 @@ class KeyboardView @JvmOverloads constructor(
     /* ================================================================
        EMOJI PICKER – Continuous Apple-style scroll, column snapping
        ================================================================ */
-    private val EMOJI_ROWS = 5
-    private val EMOJI_VISIBLE_COLS = 8   // ~8 columns visible simultaneously
+    private val EMOJI_ROWS = 4
+    private val EMOJI_VISIBLE_COLS = 7   // ~7 columns visible simultaneously
 
     private fun toggleEmojiPicker() {
         if (isEmojiMode) hideEmojiPicker() else showEmojiPicker()
@@ -418,6 +447,8 @@ class KeyboardView @JvmOverloads constructor(
 
     private fun showEmojiPicker() {
         isEmojiMode = true
+        isEmojiSearchMode = false
+        emojiSearchQuery = ""
         toolbar.visibility = GONE
         keysSection.visibility = GONE
         actionSection.visibility = GONE
@@ -425,20 +456,19 @@ class KeyboardView @JvmOverloads constructor(
         if (emojiContainer == null) {
             emojiContainer = FrameLayout(context).apply {
                 layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(290))
-                background = GradientDrawable().apply {
-                    setColor(COL_EMOJI_BG)
-                    cornerRadii = floatArrayOf(
-                        dp(14).toFloat(), dp(14).toFloat(),
-                        dp(14).toFloat(), dp(14).toFloat(),
-                        0f, 0f, 0f, 0f
-                    )
-                }
+                /* Use same background as keyboard — no dimming, no separate tint */
+                setBackgroundColor(COL_BG)
             }
             val idx = indexOfChild(bottomBar)
             addView(emojiContainer, idx)
         }
+        /* Ensure full height for grid mode */
+        emojiContainer?.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(290))
         emojiContainer?.visibility = VISIBLE
         emojiContainer?.removeAllViews()
+
+        /* Match bottom bar bg to emoji area for uniform look */
+        bottomBar.setBackgroundColor(COL_BG)
 
         val emojiLayout = LinearLayout(context).apply {
             orientation = VERTICAL
@@ -477,32 +507,66 @@ class KeyboardView @JvmOverloads constructor(
             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(38)).apply {
                 setMargins(dp(10), dp(10), dp(10), dp(6))
             }
-            setPadding(dp(12), 0, dp(12), 0)
+            setPadding(dp(12), 0, dp(8), 0)
 
-            addView(TextView(context).apply {
-                text = "\uD83D\uDD0D"
-                textSize = 14f
-                layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            /* Monochrome search icon */
+            addView(ImageView(context).apply {
+                val icon = KeyboardIcons.searchIcon(COL_TEXT_SEC, dp(16))
+                setImageDrawable(icon)
+                scaleType = ImageView.ScaleType.CENTER
+                layoutParams = LayoutParams(dp(20), LayoutParams.MATCH_PARENT).apply {
                     marginEnd = dp(6)
                 }
             })
-            addView(TextView(context).apply {
+
+            /* Search text / placeholder */
+            emojiSearchTextView = TextView(context).apply {
                 text = "\u041F\u043E\u0438\u0441\u043A \u044D\u043C\u043E\u0434\u0437\u0438"
                 textSize = 15f
                 setTextColor(0xFF8E8E93.toInt())
                 gravity = Gravity.CENTER_VERTICAL
-            })
+                layoutParams = LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
+                isSingleLine = true
+            }
+            addView(emojiSearchTextView!!)
+
+            /* Clear (X) button — hidden initially */
+            emojiSearchClearBtn = ImageView(context).apply {
+                val icon = KeyboardIcons.clearCircle(COL_TEXT_SEC, dp(18))
+                setImageDrawable(icon)
+                scaleType = ImageView.ScaleType.CENTER
+                val sz = dp(30)
+                layoutParams = LayoutParams(sz, sz)
+                visibility = GONE
+                isClickable = true; isFocusable = true
+                setOnClickListener {
+                    emojiSearchQuery = ""
+                    updateEmojiSearchDisplay()
+                }
+            }
+            addView(emojiSearchClearBtn!!)
+
+            /* Tapping the search bar enters search mode */
+            isClickable = true; isFocusable = true
+            setOnClickListener {
+                if (!isEmojiSearchMode) enterEmojiSearchMode()
+            }
         }
     }
 
     private fun hideEmojiPicker() {
         isEmojiMode = false
+        isEmojiSearchMode = false
+        emojiSearchQuery = ""
         emojiSnapAnimator?.cancel()
         emojiScrollView = null
         emojiContainer?.visibility = GONE
         toolbar.visibility = VISIBLE
         keysSection.visibility = VISIBLE
         actionSection.visibility = VISIBLE
+        /* Restore bottom bar bg to default keyboard bg */
+        bottomBar.setBackgroundColor(COL_BOTTOM)
+        updateEnterButtonIcon()
     }
 
     /**
@@ -788,7 +852,7 @@ class KeyboardView @JvmOverloads constructor(
 
     /* Frequently-used emoji tracking via SharedPreferences */
     private val PREFS_EMOJI = "reword_emoji_freq"
-    private val MAX_RECENT = 40  // 5 rows x 8 cols
+    private val MAX_RECENT = 28  // 4 rows x 7 cols
 
     private fun getFrequentEmojis(): List<String> {
         val prefs = context.getSharedPreferences(PREFS_EMOJI, Context.MODE_PRIVATE)
@@ -803,6 +867,405 @@ class KeyboardView @JvmOverloads constructor(
         val prefs = context.getSharedPreferences(PREFS_EMOJI, Context.MODE_PRIVATE)
         val count = prefs.getInt(emoji, 0)
         prefs.edit().putInt(emoji, count + 1).apply()
+    }
+
+    /* ================================================================
+       EMOJI SEARCH MODE
+       ================================================================ */
+
+    /** Enter search mode: show keyboard + horizontal results row */
+    private fun enterEmojiSearchMode() {
+        isEmojiSearchMode = true
+        emojiSearchQuery = ""
+
+        /* Rebuild emojiContainer to hold: search bar + results row (no grid, no category bar) */
+        emojiContainer?.removeAllViews()
+        emojiContainer?.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(88))
+
+        val searchLayout = LinearLayout(context).apply {
+            orientation = VERTICAL
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        /* Search bar */
+        searchLayout.addView(buildEmojiSearchBar())
+
+        /* Horizontal results row */
+        emojiSearchResultsRow = HorizontalScrollView(context).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(44))
+            isHorizontalScrollBarEnabled = false
+            setPadding(dp(6), 0, dp(6), dp(4))
+        }
+        searchLayout.addView(emojiSearchResultsRow!!)
+
+        emojiContainer?.addView(searchLayout)
+
+        /* Show keyboard rows */
+        keysSection.visibility = VISIBLE
+        actionSection.visibility = VISIBLE
+
+        /* Swap enter icon to checkmark */
+        updateEnterButtonIcon()
+        updateEmojiSearchDisplay()
+    }
+
+    /** Exit search mode — return to base keyboard entirely */
+    private fun exitEmojiSearchMode() {
+        hideEmojiPicker()
+    }
+
+    /** Update the search display: text view, clear button, and results. */
+    private fun updateEmojiSearchDisplay() {
+        /* Update text view */
+        if (emojiSearchQuery.isEmpty()) {
+            emojiSearchTextView?.text = "\u041F\u043E\u0438\u0441\u043A \u044D\u043C\u043E\u0434\u0437\u0438"
+            emojiSearchTextView?.setTextColor(0xFF8E8E93.toInt())
+            emojiSearchClearBtn?.visibility = GONE
+        } else {
+            emojiSearchTextView?.text = emojiSearchQuery
+            emojiSearchTextView?.setTextColor(COL_TEXT)
+            emojiSearchClearBtn?.visibility = VISIBLE
+        }
+
+        /* Update results row */
+        val resultsHost = emojiSearchResultsRow ?: return
+        resultsHost.removeAllViews()
+
+        val results = searchEmojis(emojiSearchQuery)
+        if (results.isEmpty() && emojiSearchQuery.isNotEmpty()) return
+
+        val row = LinearLayout(context).apply {
+            orientation = HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)
+        }
+
+        val displayList = if (emojiSearchQuery.isEmpty()) getFrequentEmojis() else results
+        for (emoji in displayList) {
+            row.addView(TextView(context).apply {
+                text = emoji
+                textSize = 28f
+                gravity = Gravity.CENTER
+                val sz = dp(42)
+                layoutParams = LayoutParams(sz, sz)
+                isClickable = true; isFocusable = true
+                setOnClickListener {
+                    trackEmojiUsage(emoji)
+                    listener?.onKeyPressed(emoji)
+                }
+            })
+        }
+        resultsHost.addView(row)
+    }
+
+    /** Update enter button icon: checkmark in search mode, return arrow otherwise. */
+    private fun updateEnterButtonIcon() {
+        enterBtn?.let { btn ->
+            val iconSize = dp(22)
+            val icon = if (isEmojiSearchMode) {
+                KeyboardIcons.checkmark(COL_TEXT, iconSize)
+            } else {
+                KeyboardIcons.returnArrow(COL_TEXT, iconSize)
+            }
+            icon.setBounds(0, 0, iconSize, iconSize)
+            btn.foreground = object : android.graphics.drawable.Drawable() {
+                override fun draw(canvas: android.graphics.Canvas) {
+                    val cx = (btn.width - iconSize) / 2f
+                    val cy = (btn.height - iconSize) / 2f
+                    canvas.save(); canvas.translate(cx, cy)
+                    icon.draw(canvas)
+                    canvas.restore()
+                }
+                override fun setAlpha(a: Int) {}
+                override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
+                @Suppress("OVERRIDE_DEPRECATION")
+                override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+            }
+        }
+    }
+
+    /** Search emojis by keywords — prefix match first, then contains. */
+    private fun searchEmojis(query: String): List<String> {
+        if (query.isBlank()) return emptyList()
+        val q = query.lowercase().trim()
+        val keywords = getEmojiKeywords()
+        val startsWith = mutableListOf<String>()
+        val contains = mutableListOf<String>()
+        for ((emoji, kws) in keywords) {
+            if (kws.any { it.startsWith(q) }) startsWith.add(emoji)
+            else if (kws.any { it.contains(q) }) contains.add(emoji)
+        }
+        return startsWith + contains
+    }
+
+    /** Comprehensive Russian + English keywords for every emoji in the built-in set. */
+    private fun getEmojiKeywords(): Map<String, List<String>> {
+        val m = mutableMapOf<String, List<String>>()
+        // ── Smileys & People ──
+        m["\uD83D\uDE00"] = listOf("улыбка", "смех", "радость", "smile", "grin")
+        m["\uD83D\uDE06"] = listOf("смех", "хаха", "ржу", "laugh")
+        m["\uD83E\uDD23"] = listOf("ржу", "слезы", "смех", "rofl")
+        m["\uD83D\uDE07"] = listOf("ангел", "нимб", "angel", "halo")
+        m["\uD83D\uDE0A"] = listOf("улыбка", "румянец", "smile", "blush")
+        m["\uD83D\uDE0F"] = listOf("ухмылка", "smirk")
+        m["\uD83D\uDE18"] = listOf("поцелуй", "kiss", "love")
+        m["\uD83D\uDE1B"] = listOf("язык", "tongue", "playful")
+        m["\uD83D\uDE04"] = listOf("улыбка", "глаза", "smile", "eyes")
+        m["\uD83D\uDE05"] = listOf("пот", "нервный", "sweat", "smile")
+        m["\uD83D\uDE02"] = listOf("слезы", "смех", "радость", "joy", "tears")
+        m["\u263A\uFE0F"] = listOf("улыбка", "smile", "relaxed")
+        m["\uD83D\uDE0C"] = listOf("облегчение", "relieved", "peaceful")
+        m["\uD83D\uDE0D"] = listOf("любовь", "сердца", "глаза", "heart", "love")
+        m["\uD83D\uDE17"] = listOf("поцелуй", "kiss")
+        m["\uD83D\uDE1C"] = listOf("подмигивание", "язык", "wink", "tongue")
+        m["\uD83D\uDE03"] = listOf("улыбка", "рот", "smile", "open")
+        m["\uD83E\uDD72"] = listOf("плач", "улыбка", "слеза", "tear", "smile")
+        m["\uD83D\uDE42"] = listOf("улыбка", "slight", "smile")
+        m["\uD83E\uDD17"] = listOf("обнимашки", "hug", "hugging")
+        m["\uD83D\uDE09"] = listOf("подмигивание", "wink")
+        m["\uD83E\uDD70"] = listOf("любовь", "сердца", "love", "hearts")
+        m["\uD83D\uDE19"] = listOf("поцелуй", "kiss")
+        m["\uD83E\uDD2A"] = listOf("сумасшедший", "безумный", "crazy", "zany")
+        m["\uD83D\uDE01"] = listOf("радость", "улыбка", "grin", "beam")
+        m["\uD83D\uDE22"] = listOf("грустный", "плач", "слеза", "cry", "sad")
+        m["\uD83D\uDE43"] = listOf("вверх ногами", "upside", "irony")
+        m["\uD83E\uDD2D"] = listOf("тайна", "рот", "secret", "oops")
+        m["\uD83D\uDE0B"] = listOf("вкусно", "язык", "yummy", "delicious")
+        m["\uD83D\uDE3B"] = listOf("кот", "любовь", "cat", "heart")
+        m["\uD83E\uDD73"] = listOf("праздник", "вечеринка", "party", "celebrate")
+        m["\uD83E\uDD28"] = listOf("подозрение", "бровь", "suspicious", "eyebrow")
+        m["\uD83E\uDD13"] = listOf("ботан", "очки", "nerd", "glasses")
+        m["\uD83D\uDE24"] = listOf("злость", "пар", "angry", "triumph")
+        m["\uD83E\uDD25"] = listOf("ложь", "нос", "lie", "pinocchio")
+        m["\uD83E\uDD78"] = listOf("маскировка", "disguise", "incognito")
+        m["\uD83D\uDE08"] = listOf("дьявол", "рожки", "devil", "imp")
+        m["\uD83D\uDC7F"] = listOf("злой", "демон", "demon", "angry")
+        m["\uD83D\uDC80"] = listOf("череп", "смерть", "skull", "death")
+        m["\u2620\uFE0F"] = listOf("череп", "кости", "skull", "bones")
+        m["\uD83D\uDCA9"] = listOf("какашка", "poop")
+        m["\uD83E\uDD21"] = listOf("клоун", "clown")
+        m["\uD83D\uDC79"] = listOf("монстр", "огр", "ogre", "monster")
+        m["\uD83D\uDC7A"] = listOf("гоблин", "goblin")
+        m["\uD83D\uDC7B"] = listOf("привидение", "призрак", "ghost")
+        m["\uD83D\uDC7D"] = listOf("инопланетянин", "пришелец", "alien")
+        m["\uD83D\uDC7E"] = listOf("монстр", "игра", "monster", "alien")
+        m["\uD83E\uDD16"] = listOf("робот", "robot")
+        m["\uD83D\uDE3A"] = listOf("кот", "улыбка", "cat", "smile")
+        m["\uD83D\uDE38"] = listOf("кот", "слезы", "cat", "joy")
+        m["\uD83D\uDE39"] = listOf("кот", "смех", "cat", "tears")
+        m["\uD83D\uDE3C"] = listOf("кот", "ухмылка", "cat", "smirk")
+        m["\uD83D\uDE3D"] = listOf("кот", "поцелуй", "cat", "kiss")
+        m["\uD83D\uDE40"] = listOf("кот", "испуг", "cat", "weary")
+        m["\uD83D\uDE3F"] = listOf("кот", "грустный", "cat", "cry")
+        m["\uD83D\uDE3E"] = listOf("кот", "злой", "cat", "angry")
+        m["\uD83D\uDE48"] = listOf("обезьяна", "глаза", "monkey", "see")
+        m["\uD83D\uDE49"] = listOf("обезьяна", "уши", "monkey", "hear")
+        m["\uD83D\uDE4A"] = listOf("обезьяна", "рот", "monkey", "speak")
+        m["\uD83D\uDC4B"] = listOf("привет", "рука", "wave", "hand", "hi")
+        m["\uD83E\uDD1A"] = listOf("рука", "ладонь", "hand", "palm")
+        m["\u270B"] = listOf("рука", "стоп", "hand", "stop")
+        m["\uD83D\uDD96"] = listOf("вулкан", "spock", "vulcan")
+        m["\uD83D\uDC4C"] = listOf("ок", "хорошо", "ok", "good")
+        m["\uD83E\uDD0F"] = listOf("щепотка", "мало", "pinch", "small")
+        m["\u270C\uFE0F"] = listOf("победа", "мир", "victory", "peace")
+        m["\uD83E\uDD1E"] = listOf("удача", "пальцы", "luck", "fingers")
+        m["\uD83E\uDD1F"] = listOf("любовь", "рука", "love", "hand")
+        m["\uD83E\uDD18"] = listOf("рок", "rock", "horns")
+        m["\uD83E\uDD19"] = listOf("позвони", "call", "shaka")
+        m["\uD83D\uDC48"] = listOf("влево", "палец", "left", "point")
+        m["\uD83D\uDC49"] = listOf("вправо", "палец", "right", "point")
+        m["\uD83D\uDC46"] = listOf("вверх", "палец", "up", "point")
+        m["\uD83D\uDC47"] = listOf("вниз", "палец", "down", "point")
+        m["\u261D\uFE0F"] = listOf("вверх", "указатель", "up", "index")
+        m["\uD83D\uDC4D"] = listOf("класс", "лайк", "палец", "thumb", "up", "like")
+        m["\uD83D\uDC4E"] = listOf("плохо", "дизлайк", "палец", "thumb", "down", "dislike")
+        m["\u270A"] = listOf("кулак", "fist")
+        m["\uD83D\uDC4A"] = listOf("удар", "кулак", "punch", "fist")
+        m["\uD83E\uDD1B"] = listOf("кулак", "влево", "fist", "left")
+        m["\uD83E\uDD1C"] = listOf("кулак", "вправо", "fist", "right")
+        m["\uD83D\uDC4F"] = listOf("аплодисменты", "хлопать", "clap", "applause")
+        m["\uD83D\uDE4C"] = listOf("руки", "ура", "raised", "hands", "celebrate")
+        m["\uD83D\uDC50"] = listOf("руки", "ладони", "open", "hands")
+        m["\uD83E\uDD32"] = listOf("ладони", "вверх", "palms", "up")
+        m["\uD83E\uDD1D"] = listOf("рукопожатие", "handshake", "deal")
+        m["\uD83D\uDE4F"] = listOf("молитва", "спасибо", "pray", "thanks", "please")
+        // ── Animals ──
+        m["\uD83D\uDC36"] = listOf("собака", "пёс", "dog", "puppy")
+        m["\uD83D\uDC31"] = listOf("кот", "кошка", "cat", "kitten")
+        m["\uD83D\uDC2D"] = listOf("мышь", "мышка", "mouse")
+        m["\uD83D\uDC39"] = listOf("хомяк", "hamster")
+        m["\uD83D\uDC30"] = listOf("кролик", "заяц", "rabbit", "bunny")
+        m["\uD83E\uDD8A"] = listOf("лиса", "fox")
+        m["\uD83D\uDC3B"] = listOf("медведь", "bear")
+        m["\uD83D\uDC3C"] = listOf("панда", "panda")
+        m["\uD83D\uDC28"] = listOf("коала", "koala")
+        m["\uD83D\uDC2F"] = listOf("тигр", "tiger")
+        m["\uD83E\uDD81"] = listOf("лев", "lion")
+        m["\uD83D\uDC2E"] = listOf("корова", "cow")
+        m["\uD83D\uDC37"] = listOf("свинья", "pig")
+        m["\uD83D\uDC38"] = listOf("лягушка", "жаба", "frog")
+        m["\uD83D\uDC35"] = listOf("обезьяна", "monkey")
+        m["\uD83D\uDC12"] = listOf("обезьяна", "monkey")
+        m["\uD83D\uDC14"] = listOf("курица", "chicken", "hen")
+        m["\uD83D\uDC27"] = listOf("пингвин", "penguin")
+        m["\uD83D\uDC26"] = listOf("птица", "bird")
+        m["\uD83D\uDC24"] = listOf("цыплёнок", "chick")
+        m["\uD83D\uDC23"] = listOf("цыплёнок", "яйцо", "chick", "egg")
+        m["\uD83D\uDC25"] = listOf("цыплёнок", "chick")
+        m["\uD83E\uDD86"] = listOf("утка", "duck")
+        m["\uD83E\uDD85"] = listOf("орёл", "eagle")
+        m["\uD83E\uDD89"] = listOf("сова", "owl")
+        m["\uD83E\uDD87"] = listOf("летучая мышь", "bat")
+        m["\uD83D\uDC3A"] = listOf("волк", "wolf")
+        m["\uD83D\uDC17"] = listOf("кабан", "boar")
+        m["\uD83D\uDC34"] = listOf("лошадь", "конь", "horse")
+        m["\uD83E\uDD84"] = listOf("единорог", "unicorn")
+        m["\uD83D\uDC1D"] = listOf("пчела", "bee", "honey")
+        m["\uD83E\uDD8B"] = listOf("бабочка", "butterfly")
+        m["\uD83D\uDC0C"] = listOf("улитка", "snail")
+        m["\uD83D\uDC1E"] = listOf("жук", "божья коровка", "bug", "ladybug")
+        m["\uD83D\uDC1C"] = listOf("муравей", "ant")
+        m["\uD83D\uDC22"] = listOf("черепаха", "turtle")
+        m["\uD83D\uDC0D"] = listOf("змея", "snake")
+        m["\uD83E\uDD8E"] = listOf("ящерица", "lizard")
+        m["\uD83E\uDD96"] = listOf("динозавр", "dinosaur", "trex")
+        m["\uD83E\uDD95"] = listOf("динозавр", "dinosaur", "sauropod")
+        m["\uD83D\uDC19"] = listOf("осьминог", "octopus")
+        m["\uD83E\uDD91"] = listOf("кальмар", "squid")
+        m["\uD83E\uDD80"] = listOf("краб", "crab")
+        m["\uD83D\uDC21"] = listOf("рыба", "тропическая", "fish", "tropical")
+        m["\uD83D\uDC20"] = listOf("рыба", "тропическая", "fish", "tropical")
+        m["\uD83D\uDC1F"] = listOf("рыба", "fish")
+        m["\uD83D\uDC2C"] = listOf("дельфин", "dolphin")
+        m["\uD83D\uDC33"] = listOf("кит", "whale")
+        // ── Food ──
+        m["\uD83C\uDF4E"] = listOf("яблоко", "красное", "apple", "red")
+        m["\uD83C\uDF50"] = listOf("груша", "pear")
+        m["\uD83C\uDF4A"] = listOf("апельсин", "мандарин", "orange", "tangerine")
+        m["\uD83C\uDF4B"] = listOf("лимон", "lemon")
+        m["\uD83C\uDF4C"] = listOf("банан", "banana")
+        m["\uD83C\uDF49"] = listOf("арбуз", "watermelon")
+        m["\uD83C\uDF47"] = listOf("виноград", "grapes")
+        m["\uD83C\uDF53"] = listOf("клубника", "strawberry")
+        m["\uD83C\uDF48"] = listOf("дыня", "melon")
+        m["\uD83C\uDF52"] = listOf("вишня", "черешня", "cherry")
+        m["\uD83C\uDF51"] = listOf("персик", "peach")
+        m["\uD83C\uDF4D"] = listOf("ананас", "pineapple")
+        m["\uD83E\uDD5D"] = listOf("киви", "kiwi")
+        m["\uD83C\uDF45"] = listOf("помидор", "томат", "tomato")
+        m["\uD83E\uDD51"] = listOf("авокадо", "avocado")
+        m["\uD83C\uDF46"] = listOf("баклажан", "eggplant")
+        m["\uD83E\uDD52"] = listOf("огурец", "cucumber")
+        m["\uD83E\uDD66"] = listOf("брокколи", "broccoli")
+        m["\uD83C\uDF44"] = listOf("гриб", "mushroom")
+        m["\uD83C\uDF5E"] = listOf("хлеб", "bread")
+        m["\uD83E\uDD50"] = listOf("круассан", "croissant")
+        m["\uD83E\uDD56"] = listOf("багет", "хлеб", "baguette")
+        m["\uD83E\uDDC0"] = listOf("сыр", "cheese")
+        m["\uD83C\uDF56"] = listOf("мясо", "кость", "meat", "bone")
+        m["\uD83C\uDF57"] = listOf("курица", "ножка", "poultry", "leg")
+        m["\uD83E\uDD69"] = listOf("стейк", "мясо", "steak", "meat")
+        m["\uD83C\uDF54"] = listOf("бургер", "гамбургер", "burger", "hamburger")
+        m["\uD83C\uDF5F"] = listOf("картошка", "фри", "fries", "french")
+        m["\uD83C\uDF55"] = listOf("пицца", "pizza")
+        m["\uD83C\uDF2D"] = listOf("хотдог", "сосиска", "hotdog")
+        m["\uD83E\uDD6A"] = listOf("сэндвич", "бутерброд", "sandwich")
+        m["\uD83C\uDF2E"] = listOf("тако", "taco")
+        m["\uD83C\uDF2F"] = listOf("буррито", "burrito")
+        m["\uD83E\uDD59"] = listOf("лаваш", "шаурма", "wrap", "pita")
+        m["\uD83C\uDF73"] = listOf("яйцо", "яичница", "egg", "cooking")
+        m["\uD83E\uDD58"] = listOf("рагу", "каша", "pot", "stew")
+        m["\uD83C\uDF72"] = listOf("суп", "soup", "bowl")
+        m["\uD83E\uDD63"] = listOf("миска", "салат", "bowl")
+        m["\uD83E\uDD57"] = listOf("салат", "salad", "green")
+        m["\uD83C\uDF7F"] = listOf("попкорн", "popcorn")
+        // ── Sports ──
+        m["\u26BD"] = listOf("футбол", "мяч", "soccer", "football")
+        m["\uD83C\uDFC0"] = listOf("баскетбол", "basketball")
+        m["\uD83C\uDFC8"] = listOf("американский футбол", "football")
+        m["\u26BE"] = listOf("бейсбол", "baseball")
+        m["\uD83C\uDFBE"] = listOf("теннис", "tennis")
+        m["\uD83C\uDFD0"] = listOf("волейбол", "volleyball")
+        m["\uD83C\uDFC9"] = listOf("регби", "rugby")
+        m["\uD83C\uDFB1"] = listOf("бильярд", "pool", "billiards")
+        m["\uD83C\uDFD3"] = listOf("пинг-понг", "настольный теннис", "ping-pong")
+        m["\uD83C\uDFF8"] = listOf("бадминтон", "badminton")
+        m["\uD83C\uDFD2"] = listOf("хоккей", "hockey")
+        m["\uD83C\uDFCF"] = listOf("крикет", "cricket")
+        m["\u26F3"] = listOf("гольф", "golf")
+        m["\uD83C\uDFF9"] = listOf("лук", "стрельба", "bow", "archery")
+        m["\uD83C\uDFA3"] = listOf("рыбалка", "удочка", "fishing")
+        m["\uD83E\uDD4A"] = listOf("бокс", "boxing", "glove")
+        m["\uD83E\uDD4B"] = listOf("боевые искусства", "карате", "martial")
+        m["\uD83C\uDFBD"] = listOf("лакросс", "lacrosse")
+        m["\uD83C\uDFBF"] = listOf("лыжи", "ski", "skiing")
+        m["\uD83C\uDFC2"] = listOf("сноуборд", "snowboard")
+        m["\uD83C\uDFC4"] = listOf("сёрфинг", "surfing")
+        m["\uD83C\uDFCA"] = listOf("плавание", "swimming")
+        m["\uD83E\uDD3D"] = listOf("водное поло", "water polo")
+        m["\uD83D\uDEB4"] = listOf("велосипед", "cycling", "bike")
+        // ── Travel ──
+        m["\uD83D\uDE97"] = listOf("машина", "авто", "car", "auto")
+        m["\uD83D\uDE95"] = listOf("такси", "taxi", "cab")
+        m["\uD83D\uDE99"] = listOf("внедорожник", "джип", "suv")
+        m["\uD83D\uDE8C"] = listOf("автобус", "bus")
+        m["\uD83D\uDE93"] = listOf("полиция", "police")
+        m["\uD83D\uDE91"] = listOf("скорая", "ambulance")
+        m["\uD83D\uDE92"] = listOf("пожарная", "fire", "truck")
+        m["\uD83D\uDE9A"] = listOf("грузовик", "фура", "truck")
+        m["\uD83D\uDE9B"] = listOf("фура", "грузовик", "truck")
+        m["\uD83D\uDE9C"] = listOf("трактор", "tractor")
+        m["\uD83D\uDEB2"] = listOf("велосипед", "bicycle", "bike")
+        m["\uD83D\uDE94"] = listOf("полиция", "police")
+        m["\uD83D\uDE8D"] = listOf("автобус", "bus")
+        m["\uD83D\uDE98"] = listOf("машина", "car")
+        m["\uD83D\uDE84"] = listOf("поезд", "скорый", "train", "bullet")
+        m["\uD83D\uDE85"] = listOf("поезд", "скорый", "train", "bullet")
+        m["\uD83D\uDE82"] = listOf("поезд", "вагон", "train", "locomotive")
+        m["\uD83D\uDE86"] = listOf("поезд", "train")
+        m["\uD83D\uDE87"] = listOf("метро", "metro", "subway")
+        m["\uD83D\uDE89"] = listOf("станция", "вокзал", "station")
+        m["\u2708\uFE0F"] = listOf("самолёт", "airplane", "plane")
+        m["\uD83D\uDEEB"] = listOf("самолёт", "взлёт", "airplane", "departure")
+        m["\uD83D\uDE80"] = listOf("ракета", "космос", "rocket", "space")
+        m["\uD83D\uDE81"] = listOf("вертолёт", "helicopter")
+        // ── Hearts & Symbols ──
+        m["\u2764\uFE0F"] = listOf("сердце", "красное", "любовь", "heart", "red", "love")
+        m["\uD83E\uDDE1"] = listOf("сердце", "оранжевое", "heart", "orange")
+        m["\uD83D\uDC9B"] = listOf("сердце", "жёлтое", "heart", "yellow")
+        m["\uD83D\uDC9A"] = listOf("сердце", "зелёное", "heart", "green")
+        m["\uD83D\uDC99"] = listOf("сердце", "синее", "heart", "blue")
+        m["\uD83D\uDC9C"] = listOf("сердце", "фиолетовое", "heart", "purple")
+        m["\uD83D\uDDA4"] = listOf("сердце", "чёрное", "heart", "black")
+        m["\uD83E\uDD0D"] = listOf("сердце", "белое", "heart", "white")
+        m["\uD83E\uDD0E"] = listOf("сердце", "коричневое", "heart", "brown")
+        m["\uD83D\uDC94"] = listOf("сердце", "разбитое", "broken", "heart")
+        m["\u2763\uFE0F"] = listOf("сердце", "восклицание", "heart", "exclamation")
+        m["\uD83D\uDC95"] = listOf("сердца", "hearts", "two")
+        m["\uD83D\uDC9E"] = listOf("сердца", "вращающиеся", "revolving", "hearts")
+        m["\uD83D\uDC93"] = listOf("сердце", "бьющееся", "heartbeat")
+        m["\uD83D\uDC97"] = listOf("сердце", "растущее", "growing", "heart")
+        m["\uD83D\uDC96"] = listOf("сердце", "искры", "sparkling", "heart")
+        m["\uD83D\uDC9D"] = listOf("сердце", "лента", "ribbon", "heart")
+        m["\uD83D\uDC98"] = listOf("сердце", "стрела", "arrow", "cupid")
+        m["\uD83D\uDC8C"] = listOf("письмо", "любовь", "love", "letter")
+        m["\uD83D\uDD34"] = listOf("круг", "красный", "circle", "red")
+        m["\uD83D\uDFE0"] = listOf("круг", "оранжевый", "circle", "orange")
+        m["\uD83D\uDFE1"] = listOf("круг", "жёлтый", "circle", "yellow")
+        m["\uD83D\uDFE2"] = listOf("круг", "зелёный", "circle", "green")
+        m["\uD83D\uDD35"] = listOf("круг", "синий", "circle", "blue")
+        m["\uD83D\uDFE3"] = listOf("круг", "фиолетовый", "circle", "purple")
+        m["\u26AB"] = listOf("круг", "чёрный", "circle", "black")
+        m["\u26AA"] = listOf("круг", "белый", "circle", "white")
+        m["\uD83D\uDFE4"] = listOf("круг", "коричневый", "circle", "brown")
+        m["\uD83D\uDD3A"] = listOf("треугольник", "вверх", "triangle", "up", "red")
+        m["\uD83D\uDD3B"] = listOf("треугольник", "вниз", "triangle", "down", "red")
+        m["\uD83D\uDD38"] = listOf("ромб", "маленький", "diamond", "small", "orange")
+        m["\uD83D\uDD39"] = listOf("ромб", "маленький", "diamond", "small", "blue")
+        return m
     }
 
     private fun getEmojiData(): List<List<String>> {
@@ -997,11 +1460,19 @@ class KeyboardView @JvmOverloads constructor(
                     MotionEvent.ACTION_DOWN -> {
                         btn.background = roundedBg(COL_KEY_PRESS, dp(5).toFloat())
                         if (key == "\u232B") {
-                            deleteButtonDown = true
-                            listener?.onDeletePressed()
-                            longPressHandler.postDelayed({
-                                if (deleteButtonDown) listener?.onDeleteLongPressStart()
-                            }, longPressDelay)
+                            if (isEmojiSearchMode) {
+                                // Route delete to search query
+                                if (emojiSearchQuery.isNotEmpty()) {
+                                    emojiSearchQuery = emojiSearchQuery.dropLast(1)
+                                    updateEmojiSearchDisplay()
+                                }
+                            } else {
+                                deleteButtonDown = true
+                                listener?.onDeletePressed()
+                                longPressHandler.postDelayed({
+                                    if (deleteButtonDown) listener?.onDeleteLongPressStart()
+                                }, longPressDelay)
+                            }
                         } else {
                             handleKeyClick(key)
                         }
@@ -1029,6 +1500,30 @@ class KeyboardView @JvmOverloads constructor(
     }
 
     private fun handleKeyClick(key: String) {
+        /* ── Emoji search mode intercept ── */
+        if (isEmojiSearchMode) {
+            when (key) {
+                "\u21E7", "\u21EA" -> listener?.onShiftPressed()
+                "\u232B" -> {
+                    if (emojiSearchQuery.isNotEmpty()) {
+                        emojiSearchQuery = emojiSearchQuery.dropLast(1)
+                        updateEmojiSearchDisplay()
+                    }
+                }
+                "#+=", "123" -> {
+                    if (isSymbolMode) symbolPage = if (symbolPage == 0) 1 else 0
+                    else { isSymbolMode = true; symbolPage = 0 }
+                    applyLayout()
+                }
+                "\u0410\u0411\u0412", "ABC" -> { isSymbolMode = false; applyLayout() }
+                else -> {
+                    emojiSearchQuery += key
+                    updateEmojiSearchDisplay()
+                }
+            }
+            return
+        }
+        /* ── Normal mode ── */
         when (key) {
             "\u21E7", "\u21EA" -> listener?.onShiftPressed()
             "\u232B" -> listener?.onDeletePressed()

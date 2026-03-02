@@ -82,6 +82,25 @@ class SharedStorageModule(reactContext: ReactApplicationContext) :
     // MARK: - Preferences
     
     @ReactMethod
+    fun setThemeMode(mode: String, promise: Promise) {
+        try {
+            storage.themeMode = mode
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
+    fun getThemeMode(promise: Promise) {
+        try {
+            promise.resolve(storage.themeMode)
+        } catch (e: Exception) {
+            promise.reject("ERROR", e.message)
+        }
+    }
+
+    @ReactMethod
     fun setSelectedMode(mode: String, promise: Promise) {
         try {
             storage.selectedMode = mode

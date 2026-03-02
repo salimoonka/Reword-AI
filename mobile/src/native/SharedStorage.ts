@@ -118,6 +118,14 @@ class SharedStorageClass {
 
   // MARK: - Preferences
 
+  async setThemeMode(mode: 'auto' | 'dark' | 'light'): Promise<boolean> {
+    return this.safe(() => NativeModule.setThemeMode(mode), false);
+  }
+
+  async getThemeMode(): Promise<string> {
+    return this.safe(() => NativeModule.getThemeMode(), 'auto');
+  }
+
   async setSelectedMode(mode: 'lite' | 'moderate' | 'creative'): Promise<boolean> {
     return this.safe(() => NativeModule.setSelectedMode(mode), false);
   }
