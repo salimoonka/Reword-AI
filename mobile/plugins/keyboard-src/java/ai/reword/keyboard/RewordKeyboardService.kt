@@ -97,7 +97,32 @@ class RewordKeyboardService :
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        if (::keyboardView.isInitialized) keyboardView.reset()
+        if (::keyboardView.isInitialized) {
+            /* Recreate keyboard view if theme changed since it was built */
+            val currentIsDark = KeyboardView.detectDarkTheme(this)
+            if (currentIsDark != keyboardView.isDarkTheme) {
+                keyboardView = KeyboardView(this).apply {
+                    listener = this@RewordKeyboardService
+                    setMode(currentMode)
+                }
+                setInputView(keyboardView)
+            }
+            keyboardView.reset()
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (::keyboardView.isInitialized) {
+            val currentIsDark = KeyboardView.detectDarkTheme(this)
+            if (currentIsDark != keyboardView.isDarkTheme) {
+                keyboardView = KeyboardView(this).apply {
+                    listener = this@RewordKeyboardService
+                    setMode(currentMode)
+                }
+                setInputView(keyboardView)
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -254,71 +279,121 @@ class RewordKeyboardService :
             return
         }
 
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            android.widget.Toast.makeText(this, "Голосовой ввод недоступен", android.widget.Toast.LENGTH_SHORT).show()
+        /* ── 1. Runtime permission check ── */
+        if (android.content.pm.PackageManager.PERMISSION_GRANTED !=
+            checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)) {
+            android.widget.Toast.makeText(
+                this, "Разрешите доступ к микрофону в настройках приложения",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
             return
         }
 
         try {
-            if (speechRecognizer == null) {
-                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            /* Always destroy previous — SpeechRecognizer is one-shot. */
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+
+            /* ── 2. Create recogniser ──────────────────────────────
+               API 31+: prefer on-device recogniser (works offline).
+               Otherwise: default cloud-based recogniser.
+               Even if isRecognitionAvailable reports false (package-visibility
+               issue on Android 11+), still TRY creating — many devices
+               return false but work fine if <queries> is declared. */
+            val sr: SpeechRecognizer = when {
+                Build.VERSION.SDK_INT >= 31 -> try {
+                    @Suppress("NewApi")
+                    if (SpeechRecognizer.isOnDeviceRecognitionAvailable(this))
+                        SpeechRecognizer.createOnDeviceSpeechRecognizer(this)
+                    else
+                        SpeechRecognizer.createSpeechRecognizer(this)
+                } catch (_: Exception) {
+                    SpeechRecognizer.createSpeechRecognizer(this)
+                }
+                else -> SpeechRecognizer.createSpeechRecognizer(this)
             }
 
-            speechRecognizer?.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    isListening = true
-                    android.widget.Toast.makeText(
-                        this@RewordKeyboardService, "Говорите...", android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-                override fun onBeginningOfSpeech() {}
-                override fun onRmsChanged(rmsdB: Float) {}
-                override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() { isListening = false }
-                override fun onError(error: Int) {
-                    isListening = false
-                    val msg = when (error) {
-                        SpeechRecognizer.ERROR_NO_MATCH -> "Речь не распознана"
-                        SpeechRecognizer.ERROR_AUDIO -> "Ошибка микрофона"
-                        SpeechRecognizer.ERROR_NETWORK,
-                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Ошибка сети"
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Нет разрешения на микрофон"
-                        else -> "Ошибка голосового ввода"
+            speechRecognizer = sr.also { rec ->
+                rec.setRecognitionListener(object : RecognitionListener {
+                    override fun onReadyForSpeech(params: Bundle?) {
+                        isListening = true
+                        android.widget.Toast.makeText(
+                            this@RewordKeyboardService, "Говорите...",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
                     }
-                    android.widget.Toast.makeText(
-                        this@RewordKeyboardService, msg, android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                }
-                override fun onResults(results: Bundle?) {
-                    isListening = false
-                    val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                    val text = matches?.firstOrNull()
-                    if (!text.isNullOrBlank()) {
-                        val ic = currentInputConnection ?: return
-                        ic.beginBatchEdit()
-                        ic.commitText(text, 1)
-                        ic.endBatchEdit()
+                    override fun onBeginningOfSpeech() {}
+                    override fun onRmsChanged(rmsdB: Float) {}
+                    override fun onBufferReceived(buffer: ByteArray?) {}
+                    override fun onEndOfSpeech() { isListening = false }
+                    override fun onError(error: Int) {
+                        isListening = false
+                        /* Remove any partial composing text */
+                        currentInputConnection?.finishComposingText()
+                        val msg = when (error) {
+                            SpeechRecognizer.ERROR_NO_MATCH -> "Речь не распознана"
+                            SpeechRecognizer.ERROR_AUDIO -> "Ошибка микрофона"
+                            SpeechRecognizer.ERROR_NETWORK,
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Ошибка сети"
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                                "Нет разрешения на микрофон"
+                            SpeechRecognizer.ERROR_RECOGNIZER_BUSY ->
+                                "Распознавание занято, попробуйте снова"
+                            SpeechRecognizer.ERROR_CLIENT -> return  // silent — cancellation
+                            SpeechRecognizer.ERROR_SERVER -> "Ошибка сервера распознавания"
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Время ожидания речи истекло"
+                            else -> "Ошибка голосового ввода ($error)"
+                        }
+                        android.widget.Toast.makeText(
+                            this@RewordKeyboardService, msg, android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        speechRecognizer?.destroy()
+                        speechRecognizer = null
                     }
-                }
-                override fun onPartialResults(partialResults: Bundle?) {
-                    val partial = partialResults
-                        ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull()
-                    // Could show partial text in suggestion strip if desired
-                }
-                override fun onEvent(eventType: Int, params: Bundle?) {}
-            })
+                    override fun onResults(results: Bundle?) {
+                        isListening = false
+                        val text = results
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                        val ic = currentInputConnection
+                        if (ic != null && !text.isNullOrBlank()) {
+                            ic.beginBatchEdit()
+                            ic.commitText(text, 1) // also replaces composing text
+                            ic.endBatchEdit()
+                        } else {
+                            ic?.finishComposingText()
+                        }
+                        speechRecognizer?.destroy()
+                        speechRecognizer = null
+                    }
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        val partial = partialResults
+                            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                        if (!partial.isNullOrBlank()) {
+                            currentInputConnection?.setComposingText(partial, 1)
+                        }
+                    }
+                    override fun onEvent(eventType: Int, params: Bundle?) {}
+                })
+            }
 
             val intent = android.content.Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE,
                     if (keyboardView.isEnglishLayout) "en-US" else "ru-RU")
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
             }
             speechRecognizer?.startListening(intent)
         } catch (e: Exception) {
-            android.widget.Toast.makeText(this, "Ошибка голосового ввода", android.widget.Toast.LENGTH_SHORT).show()
+            isListening = false
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+            android.widget.Toast.makeText(
+                this, "Голосовой ввод недоступен: ${e.message}",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
         }
     }
 

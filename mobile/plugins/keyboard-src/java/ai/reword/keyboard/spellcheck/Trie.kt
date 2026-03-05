@@ -12,13 +12,14 @@ class Trie {
     /**
      * Insert a word into the trie
      */
-    fun insert(word: String) {
+    fun insert(word: String, frequency: Int = 1) {
         var current = root
         for (char in word.lowercase()) {
             current = current.children.getOrPut(char) { TrieNode() }
         }
         current.isEndOfWord = true
         current.word = word.lowercase()
+        if (frequency > current.frequency) current.frequency = frequency
     }
     
     /**
@@ -41,9 +42,23 @@ class Trie {
      */
     fun getWordsWithPrefix(prefix: String, limit: Int = 10): List<String> {
         val node = findNode(prefix.lowercase()) ?: return emptyList()
-        val results = mutableListOf<String>()
-        collectWords(node, results, limit)
-        return results
+        val candidates = mutableListOf<Pair<String, Int>>()
+        collectWordsRanked(node, candidates, limit * 5)
+        return candidates
+            .sortedByDescending { it.second }
+            .take(limit)
+            .map { it.first }
+    }
+
+    private fun collectWordsRanked(node: TrieNode, results: MutableList<Pair<String, Int>>, limit: Int) {
+        if (results.size >= limit) return
+        if (node.isEndOfWord && node.word != null) {
+            results.add(node.word!! to node.frequency)
+        }
+        for ((_, child) in node.children.toSortedMap()) {
+            if (results.size >= limit) break
+            collectWordsRanked(child, results, limit)
+        }
     }
     
     /**
@@ -51,8 +66,7 @@ class Trie {
      * Sorted by word length (shorter first)
      */
     fun getSuggestions(prefix: String, limit: Int = 5): List<String> {
-        val words = getWordsWithPrefix(prefix, limit * 2)
-        return words.sortedBy { it.length }.take(limit)
+        return getWordsWithPrefix(prefix, limit)
     }
     
     /**
@@ -207,4 +221,5 @@ private class TrieNode {
     val children = mutableMapOf<Char, TrieNode>()
     var isEndOfWord = false
     var word: String? = null
+    var frequency: Int = 0
 }

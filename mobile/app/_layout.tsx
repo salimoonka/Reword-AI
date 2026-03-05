@@ -24,6 +24,22 @@ import { warmUpBackend } from '@/services/api/client';
 SplashScreen.preventAutoHideAsync();
 
 /**
+ * Synchronously apply the stored theme before any component mounts so that
+ * native Android DayNight mode (AppCompatDelegate) is already set correctly
+ * on the very first render — avoiding a brief flash of the wrong theme.
+ */
+;(function syncThemeEarly() {
+  try {
+    const stored = useSettingsStore.getState().themeMode;
+    if (stored === 'dark') Appearance.setColorScheme('dark');
+    else if (stored === 'light') Appearance.setColorScheme('light');
+    else Appearance.setColorScheme(null); // auto — follow system
+  } catch {
+    // Store not yet hydrated on very first cold start; effect below handles it
+  }
+})();
+
+/**
  * Deep link URL scheme: rewordai://
  * Supported paths:
  *   rewordai://settings         → Settings screen
@@ -225,7 +241,10 @@ export default function RootLayout() {
     <SafeAreaProvider>
     <ThemeProvider value={navTheme}>
     <ErrorBoundary>
-      <StatusBar style={isDarkMode ? 'light' : 'dark'} />
+      <StatusBar
+        style={isDarkMode ? 'light' : 'dark'}
+        backgroundColor={themeColors.background.primary}
+      />
       <Stack
         screenOptions={{
           headerShown: false,

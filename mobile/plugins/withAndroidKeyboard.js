@@ -93,6 +93,31 @@ function addKeyboardService(config) {
       });
     }
 
+    // --- Queries (Android 11+ package visibility for speech recognition) ---
+    if (!manifest.manifest.queries) {
+      manifest.manifest.queries = [];
+    }
+    const hasRecognitionQuery = manifest.manifest.queries.some((q) => {
+      const intents = q.intent || [];
+      return intents.some((i) => {
+        const actions = i.action || [];
+        return actions.some(
+          (a) => a.$?.['android:name'] === 'android.speech.RecognitionService'
+        );
+      });
+    });
+    if (!hasRecognitionQuery) {
+      manifest.manifest.queries.push({
+        intent: [
+          {
+            action: [
+              { $: { 'android:name': 'android.speech.RecognitionService' } },
+            ],
+          },
+        ],
+      });
+    }
+
     return mod;
   });
 }
@@ -193,6 +218,23 @@ function copyNativeKeyboardFiles(config) {
           fs.mkdirSync(path.dirname(appStringsPath), { recursive: true });
           fs.copyFileSync(keyboardStringsPath, appStringsPath);
           console.log('[withAndroidKeyboard] Created strings.xml from keyboard source');
+        }
+      }
+
+      // ── Ensure forceDarkAllowed=false survives prebuild ──
+      const stylesPath = path.join(mainDir, 'res', 'values', 'styles.xml');
+      if (fs.existsSync(stylesPath)) {
+        let stylesXml = fs.readFileSync(stylesPath, 'utf-8');
+        if (!stylesXml.includes('forceDarkAllowed')) {
+          if (!stylesXml.includes('xmlns:tools')) {
+            stylesXml = stylesXml.replace('<resources', '<resources xmlns:tools="http://schemas.android.com/tools"');
+          }
+          stylesXml = stylesXml.replace(
+            /(<style name="AppTheme"[^>]*>)/,
+            '$1\n    <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>'
+          );
+          fs.writeFileSync(stylesPath, stylesXml, 'utf-8');
+          console.log('[withAndroidKeyboard] Added forceDarkAllowed=false to styles.xml');
         }
       }
 

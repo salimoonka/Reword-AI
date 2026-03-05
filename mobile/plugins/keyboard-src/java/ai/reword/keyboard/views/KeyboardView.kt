@@ -63,18 +63,31 @@ class KeyboardView @JvmOverloads constructor(
     private var isEmojiSearchMode = false
     private var emojiSearchQuery = ""
     private var currentMode: ParaphraseMode = ParaphraseMode.PROFESSIONAL
-    private var selectedEmojiCategory = 0  // 0 = frequent, 1..6 = data categories
+    private var selectedEmojiCategory = 0  // 0 = frequent, 1..7 = data categories
 
-    /* Theme detection — prefers app's chosen mode from SharedPreferences;
-       falls back to system dark mode flag. */
-    private val isDarkTheme: Boolean = run {
-        val prefs = context.getSharedPreferences("reword_shared_prefs", Context.MODE_PRIVATE)
-        when (prefs.getString("theme_mode", "auto")) {
-            "dark"  -> true
-            "light" -> false
-            else    -> // "auto" — follow system
-                (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                        Configuration.UI_MODE_NIGHT_YES
+    /* Theme detection — reads app preference from SharedPreferences.
+       For "auto", reads SYSTEM-LEVEL config (Resources.getSystem()) so the
+       result is not affected by Appearance.setColorScheme() overrides. */
+    val isDarkTheme: Boolean = detectDarkTheme(context)
+
+    companion object {
+        /** Detect dark theme from SharedPreferences + real system config. */
+        fun detectDarkTheme(ctx: Context): Boolean {
+            val prefs = try {
+                ctx.getSharedPreferences("reword_shared_prefs", Context.MODE_MULTI_PROCESS)
+            } catch (_: Exception) {
+                ctx.getSharedPreferences("reword_shared_prefs", Context.MODE_PRIVATE)
+            }
+            return when (prefs.getString("theme_mode", "auto")) {
+                "dark"  -> true
+                "light" -> false
+                else    -> {
+                    /* "auto" — use system-global uiMode, not app-local config
+                       which may be overridden by Appearance.setColorScheme(). */
+                    val sysUiMode = android.content.res.Resources.getSystem().configuration.uiMode
+                    (sysUiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+                }
+            }
         }
     }
 
@@ -87,15 +100,16 @@ class KeyboardView @JvmOverloads constructor(
     private val COL_TOOLBAR   = COL_BG   // unified – no visual separation
     private val COL_BOTTOM    = COL_BG   // unified – no visual separation
 
-    /* Emoji picker colours */
-    private val COL_EMOJI_BG      = if (isDarkTheme) 0xFF2C2C2E.toInt() else 0xFFF0F0F3.toInt()
-    private val COL_EMOJI_SEARCH  = if (isDarkTheme) 0xFF3A3A3C.toInt() else 0xFFE4E4E8.toInt()
+    /* Emoji picker colours — emoji area uses pure black/white so emojis
+       render at full saturation without a grey tint dimming them. */
+    private val COL_EMOJI_BG      = if (isDarkTheme) COL_BG else 0xFFFFFFFF.toInt()
+    private val COL_EMOJI_SEARCH  = if (isDarkTheme) 0xFF1C1C1E.toInt() else 0xFFE8E8E8.toInt()
     private val COL_EMOJI_CAT_SEL = if (isDarkTheme) 0xFF48484A.toInt() else 0xFFD0D0D4.toInt()
 
     /* Icon size in px for toolbar circular buttons */
     private val ICON_SIZE_TB = dp(20)
-    /* Icon size for bottom bar — matches emoji smiley icon (dp 24) */
-    private val ICON_SIZE_BB = dp(24)
+    /* Icon size for bottom bar — slightly larger for visibility */
+    private val ICON_SIZE_BB = dp(28)
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
@@ -144,7 +158,7 @@ class KeyboardView @JvmOverloads constructor(
     private var emojiSectionOffsets = intArrayOf()
     private var emojiColWidth = 0
     private var emojiSnapAnimator: ValueAnimator? = null
-    private var emojiSearchResultsRow: HorizontalScrollView? = null
+    private var emojiSearchResultsRow: FrameLayout? = null
     private var emojiSearchTextView: TextView? = null
     private var emojiSearchClearBtn: ImageView? = null
 
@@ -456,19 +470,18 @@ class KeyboardView @JvmOverloads constructor(
         if (emojiContainer == null) {
             emojiContainer = FrameLayout(context).apply {
                 layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(290))
-                /* Use same background as keyboard — no dimming, no separate tint */
-                setBackgroundColor(COL_BG)
+                setBackgroundColor(COL_EMOJI_BG)
             }
-            val idx = indexOfChild(bottomBar)
-            addView(emojiContainer, idx)
         }
-        /* Ensure full height for grid mode */
+        /* Always position directly before bottomBar (may have moved in search mode) */
+        if (indexOfChild(emojiContainer) >= 0) removeView(emojiContainer)
+        addView(emojiContainer, indexOfChild(bottomBar))
         emojiContainer?.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(290))
         emojiContainer?.visibility = VISIBLE
         emojiContainer?.removeAllViews()
 
         /* Match bottom bar bg to emoji area for uniform look */
-        bottomBar.setBackgroundColor(COL_BG)
+        bottomBar.setBackgroundColor(COL_EMOJI_BG)
 
         val emojiLayout = LinearLayout(context).apply {
             orientation = VERTICAL
@@ -502,12 +515,13 @@ class KeyboardView @JvmOverloads constructor(
             gravity = Gravity.CENTER_VERTICAL
             background = GradientDrawable().apply {
                 setColor(COL_EMOJI_SEARCH)
-                cornerRadius = dp(18).toFloat()
+                cornerRadius = dp(10).toFloat()
+                setStroke(dp(1), 0xFF8E8E93.toInt())
             }
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(38)).apply {
-                setMargins(dp(10), dp(10), dp(10), dp(6))
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(36)).apply {
+                setMargins(dp(10), dp(8), dp(10), dp(6))
             }
-            setPadding(dp(12), 0, dp(8), 0)
+            setPadding(dp(10), 0, dp(8), 0)
 
             /* Monochrome search icon */
             addView(ImageView(context).apply {
@@ -519,14 +533,18 @@ class KeyboardView @JvmOverloads constructor(
                 }
             })
 
-            /* Search text / placeholder */
+            /* Search text / placeholder — shows blinking cursor when active */
             emojiSearchTextView = TextView(context).apply {
                 text = "\u041F\u043E\u0438\u0441\u043A \u044D\u043C\u043E\u0434\u0437\u0438"
                 textSize = 15f
-                setTextColor(0xFF8E8E93.toInt())
+                setTextColor(if (isEmojiSearchMode && emojiSearchQuery.isEmpty()) 0xFF8E8E93.toInt() else 0xFF8E8E93.toInt())
                 gravity = Gravity.CENTER_VERTICAL
                 layoutParams = LayoutParams(0, LayoutParams.MATCH_PARENT, 1f)
                 isSingleLine = true
+                // Show cursor when in search mode
+                if (isEmojiSearchMode) {
+                    isCursorVisible = true
+                }
             }
             addView(emojiSearchTextView!!)
 
@@ -537,7 +555,7 @@ class KeyboardView @JvmOverloads constructor(
                 scaleType = ImageView.ScaleType.CENTER
                 val sz = dp(30)
                 layoutParams = LayoutParams(sz, sz)
-                visibility = GONE
+                visibility = if (isEmojiSearchMode && emojiSearchQuery.isNotEmpty()) VISIBLE else GONE
                 isClickable = true; isFocusable = true
                 setOnClickListener {
                     emojiSearchQuery = ""
@@ -566,6 +584,7 @@ class KeyboardView @JvmOverloads constructor(
         actionSection.visibility = VISIBLE
         /* Restore bottom bar bg to default keyboard bg */
         bottomBar.setBackgroundColor(COL_BOTTOM)
+        bottomBar.visibility = VISIBLE
         updateEnterButtonIcon()
     }
 
@@ -615,9 +634,10 @@ class KeyboardView @JvmOverloads constructor(
                         val emoji = emojis[idx]
                         column.addView(TextView(context).apply {
                             text = emoji
-                            textSize = 26f
+                            textSize = 30f
                             gravity = Gravity.CENTER
                             layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+                            setPadding(0, 0, 0, 0)
                             isClickable = true; isFocusable = true
                             setOnClickListener {
                                 trackEmojiUsage(emoji)
@@ -756,7 +776,8 @@ class KeyboardView @JvmOverloads constructor(
             "\uD83C\uDF4E",          // 3: food
             "\u26BD",                // 4: sports
             "\uD83D\uDE97",          // 5: travel
-            "\u2764\uFE0F"           // 6: hearts/symbols
+            "\u2764\uFE0F",          // 6: hearts/symbols
+            "\uD83C\uDFF3\uFE0F"     // 7: flags
         )
 
         emojiCategoryViews.clear()
@@ -873,14 +894,21 @@ class KeyboardView @JvmOverloads constructor(
        EMOJI SEARCH MODE
        ================================================================ */
 
-    /** Enter search mode: show keyboard + horizontal results row */
+    /** Enter search mode: iOS layout = search bar on top → single horizontal
+     *  emoji results row → keyboard rows below. */
     private fun enterEmojiSearchMode() {
         isEmojiSearchMode = true
         emojiSearchQuery = ""
 
-        /* Rebuild emojiContainer to hold: search bar + results row (no grid, no category bar) */
         emojiContainer?.removeAllViews()
-        emojiContainer?.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(88))
+        emojiContainer?.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(94))
+        emojiContainer?.setBackgroundColor(COL_EMOJI_BG)
+
+        /* Move emojiContainer ABOVE keyboard rows for iOS search layout */
+        emojiContainer?.let { container ->
+            if (indexOfChild(container) >= 0) removeView(container)
+            addView(container, 1) // after toolbar (index 0, GONE)
+        }
 
         val searchLayout = LinearLayout(context).apply {
             orientation = VERTICAL
@@ -888,68 +916,126 @@ class KeyboardView @JvmOverloads constructor(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
             )
+            setBackgroundColor(COL_EMOJI_BG)
         }
 
-        /* Search bar */
+        /* Search bar at top */
         searchLayout.addView(buildEmojiSearchBar())
 
-        /* Horizontal results row */
-        emojiSearchResultsRow = HorizontalScrollView(context).apply {
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, dp(44))
-            isHorizontalScrollBarEnabled = false
-            setPadding(dp(6), 0, dp(6), dp(4))
+        /* Single horizontal results row (remaining height) */
+        emojiSearchResultsRow = FrameLayout(context).apply {
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f)
+            setPadding(dp(4), 0, dp(4), 0)
+            setBackgroundColor(COL_EMOJI_BG)
         }
         searchLayout.addView(emojiSearchResultsRow!!)
 
         emojiContainer?.addView(searchLayout)
 
-        /* Show keyboard rows */
+        /* Show keyboard rows below the emoji container */
         keysSection.visibility = VISIBLE
         actionSection.visibility = VISIBLE
+        bottomBar.visibility = VISIBLE
 
-        /* Swap enter icon to checkmark */
+        /* Blue check button + cursor blink */
         updateEnterButtonIcon()
+        startCursorBlink()
         updateEmojiSearchDisplay()
     }
 
-    /** Exit search mode — return to base keyboard entirely */
+    /** Exit search mode — return to full emoji picker (not base keyboard). */
     private fun exitEmojiSearchMode() {
-        hideEmojiPicker()
+        stopCursorBlink()
+        isEmojiSearchMode = false
+        emojiSearchQuery = ""
+        /* Re-show full emoji picker */
+        showEmojiPicker()
     }
 
-    /** Update the search display: text view, clear button, and results. */
-    private fun updateEmojiSearchDisplay() {
-        /* Update text view */
-        if (emojiSearchQuery.isEmpty()) {
-            emojiSearchTextView?.text = "\u041F\u043E\u0438\u0441\u043A \u044D\u043C\u043E\u0434\u0437\u0438"
-            emojiSearchTextView?.setTextColor(0xFF8E8E93.toInt())
-            emojiSearchClearBtn?.visibility = GONE
-        } else {
-            emojiSearchTextView?.text = emojiSearchQuery
-            emojiSearchTextView?.setTextColor(COL_TEXT)
-            emojiSearchClearBtn?.visibility = VISIBLE
+    /* ── Cursor blink for search bar ── */
+    private val cursorHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var cursorVisible = true
+    private val cursorRunnable = object : Runnable {
+        override fun run() {
+            if (!isEmojiSearchMode) return
+            cursorVisible = !cursorVisible
+            refreshSearchBarText()
+            cursorHandler.postDelayed(this, 500)
         }
+    }
 
-        /* Update results row */
+    private fun startCursorBlink() {
+        cursorVisible = true
+        cursorHandler.removeCallbacks(cursorRunnable)
+        cursorHandler.postDelayed(cursorRunnable, 500)
+    }
+
+    private fun stopCursorBlink() {
+        cursorHandler.removeCallbacks(cursorRunnable)
+        cursorVisible = false
+    }
+
+    private fun refreshSearchBarText() {
+        val cursor = if (cursorVisible) "|" else " "
+        if (emojiSearchQuery.isEmpty()) {
+            // Show placeholder with cursor
+            emojiSearchTextView?.text = "$cursor\u041F\u043E\u0438\u0441\u043A \u044D\u043C\u043E\u0434\u0437\u0438"
+            emojiSearchTextView?.setTextColor(0xFF8E8E93.toInt())
+        } else {
+            emojiSearchTextView?.text = "${emojiSearchQuery}$cursor"
+            emojiSearchTextView?.setTextColor(COL_TEXT)
+        }
+    }
+
+    /** Update the search display: text view, clear button, and results.
+     *  iOS style — single horizontal scrolling row of emoji. */
+    private fun updateEmojiSearchDisplay() {
+        refreshSearchBarText()
+        cursorVisible = true
+        cursorHandler.removeCallbacks(cursorRunnable)
+        cursorHandler.postDelayed(cursorRunnable, 500)
+
+        emojiSearchClearBtn?.visibility = if (emojiSearchQuery.isNotEmpty()) VISIBLE else GONE
+
         val resultsHost = emojiSearchResultsRow ?: return
         resultsHost.removeAllViews()
 
-        val results = searchEmojis(emojiSearchQuery)
-        if (results.isEmpty() && emojiSearchQuery.isNotEmpty()) return
+        val results = if (emojiSearchQuery.isNotBlank()) searchEmojis(emojiSearchQuery) else emptyList()
+        val displayList = if (emojiSearchQuery.isEmpty()) getFrequentEmojis() else results
 
+        if (displayList.isEmpty() && emojiSearchQuery.isNotEmpty()) {
+            resultsHost.addView(TextView(context).apply {
+                text = "\u041D\u0438\u0447\u0435\u0433\u043E \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\u043E"
+                textSize = 14f
+                setTextColor(0xFF8E8E93.toInt())
+                gravity = Gravity.CENTER
+                layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
+            })
+            return
+        }
+
+        /* Single horizontal scrolling row — iOS emoji search style */
+        val scroll = HorizontalScrollView(context).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = OVER_SCROLL_NEVER
+            setBackgroundColor(COL_EMOJI_BG)
+        }
         val row = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)
+            setPadding(dp(6), 0, dp(6), 0)
         }
-
-        val displayList = if (emojiSearchQuery.isEmpty()) getFrequentEmojis() else results
         for (emoji in displayList) {
             row.addView(TextView(context).apply {
                 text = emoji
-                textSize = 28f
+                textSize = 30f
                 gravity = Gravity.CENTER
-                val sz = dp(42)
+                val sz = dp(44)
                 layoutParams = LayoutParams(sz, sz)
                 isClickable = true; isFocusable = true
                 setOnClickListener {
@@ -958,17 +1044,21 @@ class KeyboardView @JvmOverloads constructor(
                 }
             })
         }
-        resultsHost.addView(row)
+        scroll.addView(row)
+        resultsHost.addView(scroll)
     }
 
-    /** Update enter button icon: checkmark in search mode, return arrow otherwise. */
+    /** Update enter button icon: blue checkmark in search mode, return arrow otherwise. */
     private fun updateEnterButtonIcon() {
         enterBtn?.let { btn ->
             val iconSize = dp(22)
-            val icon = if (isEmojiSearchMode) {
-                KeyboardIcons.checkmark(COL_TEXT, iconSize)
+            val icon: android.graphics.drawable.Drawable
+            if (isEmojiSearchMode) {
+                icon = KeyboardIcons.checkmark(0xFFFFFFFF.toInt(), iconSize)
+                btn.background = roundedBg(0xFF007AFF.toInt(), dp(5).toFloat())
             } else {
-                KeyboardIcons.returnArrow(COL_TEXT, iconSize)
+                icon = KeyboardIcons.returnArrow(COL_TEXT, iconSize)
+                btn.background = roundedBg(COL_KEY, dp(5).toFloat())
             }
             icon.setBounds(0, 0, iconSize, iconSize)
             btn.foreground = object : android.graphics.drawable.Drawable() {
@@ -1005,266 +1095,433 @@ class KeyboardView @JvmOverloads constructor(
     private fun getEmojiKeywords(): Map<String, List<String>> {
         val m = mutableMapOf<String, List<String>>()
         // ── Smileys & People ──
-        m["\uD83D\uDE00"] = listOf("улыбка", "смех", "радость", "smile", "grin")
-        m["\uD83D\uDE06"] = listOf("смех", "хаха", "ржу", "laugh")
-        m["\uD83E\uDD23"] = listOf("ржу", "слезы", "смех", "rofl")
-        m["\uD83D\uDE07"] = listOf("ангел", "нимб", "angel", "halo")
-        m["\uD83D\uDE0A"] = listOf("улыбка", "румянец", "smile", "blush")
-        m["\uD83D\uDE0F"] = listOf("ухмылка", "smirk")
-        m["\uD83D\uDE18"] = listOf("поцелуй", "kiss", "love")
-        m["\uD83D\uDE1B"] = listOf("язык", "tongue", "playful")
-        m["\uD83D\uDE04"] = listOf("улыбка", "глаза", "smile", "eyes")
-        m["\uD83D\uDE05"] = listOf("пот", "нервный", "sweat", "smile")
-        m["\uD83D\uDE02"] = listOf("слезы", "смех", "радость", "joy", "tears")
-        m["\u263A\uFE0F"] = listOf("улыбка", "smile", "relaxed")
-        m["\uD83D\uDE0C"] = listOf("облегчение", "relieved", "peaceful")
-        m["\uD83D\uDE0D"] = listOf("любовь", "сердца", "глаза", "heart", "love")
-        m["\uD83D\uDE17"] = listOf("поцелуй", "kiss")
-        m["\uD83D\uDE1C"] = listOf("подмигивание", "язык", "wink", "tongue")
-        m["\uD83D\uDE03"] = listOf("улыбка", "рот", "smile", "open")
-        m["\uD83E\uDD72"] = listOf("плач", "улыбка", "слеза", "tear", "smile")
-        m["\uD83D\uDE42"] = listOf("улыбка", "slight", "smile")
-        m["\uD83E\uDD17"] = listOf("обнимашки", "hug", "hugging")
-        m["\uD83D\uDE09"] = listOf("подмигивание", "wink")
-        m["\uD83E\uDD70"] = listOf("любовь", "сердца", "love", "hearts")
-        m["\uD83D\uDE19"] = listOf("поцелуй", "kiss")
-        m["\uD83E\uDD2A"] = listOf("сумасшедший", "безумный", "crazy", "zany")
-        m["\uD83D\uDE01"] = listOf("радость", "улыбка", "grin", "beam")
-        m["\uD83D\uDE22"] = listOf("грустный", "плач", "слеза", "cry", "sad")
-        m["\uD83D\uDE43"] = listOf("вверх ногами", "upside", "irony")
-        m["\uD83E\uDD2D"] = listOf("тайна", "рот", "secret", "oops")
-        m["\uD83D\uDE0B"] = listOf("вкусно", "язык", "yummy", "delicious")
-        m["\uD83D\uDE3B"] = listOf("кот", "любовь", "cat", "heart")
-        m["\uD83E\uDD73"] = listOf("праздник", "вечеринка", "party", "celebrate")
-        m["\uD83E\uDD28"] = listOf("подозрение", "бровь", "suspicious", "eyebrow")
-        m["\uD83E\uDD13"] = listOf("ботан", "очки", "nerd", "glasses")
-        m["\uD83D\uDE24"] = listOf("злость", "пар", "angry", "triumph")
-        m["\uD83E\uDD25"] = listOf("ложь", "нос", "lie", "pinocchio")
-        m["\uD83E\uDD78"] = listOf("маскировка", "disguise", "incognito")
-        m["\uD83D\uDE08"] = listOf("дьявол", "рожки", "devil", "imp")
-        m["\uD83D\uDC7F"] = listOf("злой", "демон", "demon", "angry")
-        m["\uD83D\uDC80"] = listOf("череп", "смерть", "skull", "death")
-        m["\u2620\uFE0F"] = listOf("череп", "кости", "skull", "bones")
-        m["\uD83D\uDCA9"] = listOf("какашка", "poop")
-        m["\uD83E\uDD21"] = listOf("клоун", "clown")
-        m["\uD83D\uDC79"] = listOf("монстр", "огр", "ogre", "monster")
-        m["\uD83D\uDC7A"] = listOf("гоблин", "goblin")
-        m["\uD83D\uDC7B"] = listOf("привидение", "призрак", "ghost")
-        m["\uD83D\uDC7D"] = listOf("инопланетянин", "пришелец", "alien")
-        m["\uD83D\uDC7E"] = listOf("монстр", "игра", "monster", "alien")
-        m["\uD83E\uDD16"] = listOf("робот", "robot")
-        m["\uD83D\uDE3A"] = listOf("кот", "улыбка", "cat", "smile")
-        m["\uD83D\uDE38"] = listOf("кот", "слезы", "cat", "joy")
-        m["\uD83D\uDE39"] = listOf("кот", "смех", "cat", "tears")
-        m["\uD83D\uDE3C"] = listOf("кот", "ухмылка", "cat", "smirk")
-        m["\uD83D\uDE3D"] = listOf("кот", "поцелуй", "cat", "kiss")
-        m["\uD83D\uDE40"] = listOf("кот", "испуг", "cat", "weary")
-        m["\uD83D\uDE3F"] = listOf("кот", "грустный", "cat", "cry")
-        m["\uD83D\uDE3E"] = listOf("кот", "злой", "cat", "angry")
-        m["\uD83D\uDE48"] = listOf("обезьяна", "глаза", "monkey", "see")
-        m["\uD83D\uDE49"] = listOf("обезьяна", "уши", "monkey", "hear")
-        m["\uD83D\uDE4A"] = listOf("обезьяна", "рот", "monkey", "speak")
-        m["\uD83D\uDC4B"] = listOf("привет", "рука", "wave", "hand", "hi")
-        m["\uD83E\uDD1A"] = listOf("рука", "ладонь", "hand", "palm")
-        m["\u270B"] = listOf("рука", "стоп", "hand", "stop")
-        m["\uD83D\uDD96"] = listOf("вулкан", "spock", "vulcan")
-        m["\uD83D\uDC4C"] = listOf("ок", "хорошо", "ok", "good")
-        m["\uD83E\uDD0F"] = listOf("щепотка", "мало", "pinch", "small")
-        m["\u270C\uFE0F"] = listOf("победа", "мир", "victory", "peace")
-        m["\uD83E\uDD1E"] = listOf("удача", "пальцы", "luck", "fingers")
-        m["\uD83E\uDD1F"] = listOf("любовь", "рука", "love", "hand")
-        m["\uD83E\uDD18"] = listOf("рок", "rock", "horns")
-        m["\uD83E\uDD19"] = listOf("позвони", "call", "shaka")
-        m["\uD83D\uDC48"] = listOf("влево", "палец", "left", "point")
-        m["\uD83D\uDC49"] = listOf("вправо", "палец", "right", "point")
-        m["\uD83D\uDC46"] = listOf("вверх", "палец", "up", "point")
-        m["\uD83D\uDC47"] = listOf("вниз", "палец", "down", "point")
-        m["\u261D\uFE0F"] = listOf("вверх", "указатель", "up", "index")
-        m["\uD83D\uDC4D"] = listOf("класс", "лайк", "палец", "thumb", "up", "like")
-        m["\uD83D\uDC4E"] = listOf("плохо", "дизлайк", "палец", "thumb", "down", "dislike")
-        m["\u270A"] = listOf("кулак", "fist")
-        m["\uD83D\uDC4A"] = listOf("удар", "кулак", "punch", "fist")
-        m["\uD83E\uDD1B"] = listOf("кулак", "влево", "fist", "left")
-        m["\uD83E\uDD1C"] = listOf("кулак", "вправо", "fist", "right")
-        m["\uD83D\uDC4F"] = listOf("аплодисменты", "хлопать", "clap", "applause")
-        m["\uD83D\uDE4C"] = listOf("руки", "ура", "raised", "hands", "celebrate")
-        m["\uD83D\uDC50"] = listOf("руки", "ладони", "open", "hands")
-        m["\uD83E\uDD32"] = listOf("ладони", "вверх", "palms", "up")
-        m["\uD83E\uDD1D"] = listOf("рукопожатие", "handshake", "deal")
-        m["\uD83D\uDE4F"] = listOf("молитва", "спасибо", "pray", "thanks", "please")
+        m["\uD83D\uDE00"] = listOf("улыбка","смех","радость","веселье","smile","grin","happy","joy")
+        m["\uD83D\uDE06"] = listOf("смех","хаха","ржу","веселье","laugh","haha","lol")
+        m["\uD83E\uDD23"] = listOf("ржу","слёзы","смех","катаюсь","rofl","lol","tears","laugh")
+        m["\uD83D\uDE07"] = listOf("ангел","нимб","невинный","добрый","angel","halo","innocent")
+        m["\uD83D\uDE0A"] = listOf("улыбка","румянец","щёки","счастье","smile","blush","happy","shy")
+        m["\uD83D\uDE0F"] = listOf("ухмылка","хитрый","самоуверенный","smirk","sly","cocky")
+        m["\uD83D\uDE18"] = listOf("поцелуй","целую","воздушный","kiss","love","smooch","muah")
+        m["\uD83D\uDE1B"] = listOf("язык","дразнить","шутка","tongue","playful","silly","tease")
+        m["\uD83D\uDE04"] = listOf("улыбка","глаза","радость","счастье","smile","eyes","happy","grin")
+        m["\uD83D\uDE05"] = listOf("пот","нервный","неловко","smile","sweat","nervous","awkward")
+        m["\uD83D\uDE02"] = listOf("слёзы","смех","радость","ржу","joy","tears","laugh","lol","funny")
+        m["\u263A\uFE0F"] = listOf("улыбка","тёплая","спокойствие","smile","relaxed","warm","classic")
+        m["\uD83D\uDE0C"] = listOf("облегчение","спокойствие","мир","relieved","peaceful","calm","zen")
+        m["\uD83D\uDE0D"] = listOf("любовь","сердца","глаза","влюблён","heart","eyes","love","crush","adore")
+        m["\uD83D\uDE17"] = listOf("поцелуй","целую","губы","kiss","peck","lips")
+        m["\uD83D\uDE1C"] = listOf("подмигивание","язык","шалость","wink","tongue","silly","playful")
+        m["\uD83D\uDE03"] = listOf("улыбка","рот","открытый","весёлый","smile","open","happy","cheerful")
+        m["\uD83E\uDD72"] = listOf("плач","улыбка","слеза","грусть","smile","tear","bittersweet","sad")
+        m["\uD83D\uDE42"] = listOf("улыбка","слегка","slight","smile","mild","ok")
+        m["\uD83E\uDD17"] = listOf("обнимашки","обнять","тепло","hug","hugging","warm","embrace")
+        m["\uD83D\uDE09"] = listOf("подмигивание","хитрый","намёк","wink","sly","hint")
+        m["\uD83E\uDD70"] = listOf("любовь","сердца","обожание","нежность","love","hearts","adore","sweet")
+        m["\uD83D\uDE19"] = listOf("поцелуй","целую","kiss","smooch","peck")
+        m["\uD83E\uDD2A"] = listOf("сумасшедший","безумный","дурачок","crazy","zany","wild","goofy")
+        m["\uD83D\uDE01"] = listOf("радость","улыбка","зубы","grin","beam","teeth","happy")
+        m["\uD83D\uDE22"] = listOf("грустный","плач","слеза","печаль","cry","sad","tear","upset")
+        m["\uD83D\uDE43"] = listOf("вверх ногами","ирония","сарказм","upside","down","irony","sarcasm")
+        m["\uD83E\uDD2D"] = listOf("тайна","ой","рот","хихи","secret","oops","giggle","tee-hee")
+        m["\uD83D\uDE0B"] = listOf("вкусно","язык","ням","еда","yummy","delicious","tongue","tasty")
+        m["\uD83D\uDE3B"] = listOf("кот","любовь","сердца","cat","heart","love","kitten")
+        m["\uD83E\uDD73"] = listOf("праздник","вечеринка","день рождения","party","celebrate","birthday")
+        m["\uD83E\uDD28"] = listOf("подозрение","бровь","скептик","hmm","suspicious","eyebrow","skeptic")
+        m["\uD83E\uDD13"] = listOf("ботан","очки","умный","nerd","glasses","smart","geek")
+        m["\uD83D\uDE24"] = listOf("злость","пар","триумф","бесит","angry","triumph","steam","mad")
+        m["\uD83E\uDD25"] = listOf("ложь","врун","нос","pinocchio","lie","liar","nose")
+        m["\uD83E\uDD78"] = listOf("маскировка","инкогнито","шпион","disguise","incognito","spy")
+        m["\uD83D\uDE08"] = listOf("дьявол","рожки","зло","шалость","devil","imp","evil","naughty")
+        m["\uD83D\uDC7F"] = listOf("злой","демон","дьявол","angry","demon","devil","mean")
+        m["\uD83D\uDC80"] = listOf("череп","смерть","мертвец","skull","death","dead","skeleton")
+        m["\u2620\uFE0F"] = listOf("череп","кости","пират","опасность","skull","crossbones","pirate","danger")
+        m["\uD83D\uDCA9"] = listOf("какашка","фу","пу","poop","shit","crap","turd")
+        m["\uD83E\uDD21"] = listOf("клоун","цирк","шут","clown","circus","joker")
+        m["\uD83D\uDC79"] = listOf("монстр","огр","страшный","чудовище","ogre","monster","scary")
+        m["\uD83D\uDC7A"] = listOf("гоблин","тролль","злой","goblin","troll","tengu")
+        m["\uD83D\uDC7B"] = listOf("привидение","призрак","бу","ghost","boo","spooky","halloween")
+        m["\uD83D\uDC7D"] = listOf("инопланетянин","пришелец","нло","alien","ufo","space")
+        m["\uD83D\uDC7E"] = listOf("монстр","игра","аркада","пришелец","alien","game","arcade","pixel")
+        m["\uD83E\uDD16"] = listOf("робот","бот","машина","robot","bot","android","ai")
+        m["\uD83D\uDE3A"] = listOf("кот","улыбка","мяу","cat","smile","grin","meow")
+        m["\uD83D\uDE38"] = listOf("кот","слёзы","смех","cat","joy","tears","laugh")
+        m["\uD83D\uDE39"] = listOf("кот","смех","ржёт","cat","tears","joy","rofl")
+        m["\uD83D\uDE3C"] = listOf("кот","ухмылка","хитрый","cat","smirk","sly","wry")
+        m["\uD83D\uDE3D"] = listOf("кот","поцелуй","целует","cat","kiss","smooch")
+        m["\uD83D\uDE40"] = listOf("кот","испуг","шок","cat","weary","scared","shock")
+        m["\uD83D\uDE3F"] = listOf("кот","грустный","плачет","cat","cry","sad","tear")
+        m["\uD83D\uDE3E"] = listOf("кот","злой","сердитый","cat","angry","grumpy","mad")
+        m["\uD83D\uDE48"] = listOf("обезьяна","глаза","не вижу","monkey","see","no","evil")
+        m["\uD83D\uDE49"] = listOf("обезьяна","уши","не слышу","monkey","hear","no","evil")
+        m["\uD83D\uDE4A"] = listOf("обезьяна","рот","молчу","monkey","speak","no","evil")
+        // ── Hands & Gestures ──
+        m["\uD83D\uDC4B"] = listOf("привет","рука","пока","махать","wave","hand","hi","hello","bye")
+        m["\uD83E\uDD1A"] = listOf("рука","ладонь","стоп","hand","palm","raised","back")
+        m["\u270B"] = listOf("рука","стоп","пять","hand","stop","high five","raised")
+        m["\uD83D\uDD96"] = listOf("вулкан","спок","trek","spock","vulcan","prosper")
+        m["\uD83D\uDC4C"] = listOf("ок","хорошо","отлично","ok","good","fine","perfect","nice")
+        m["\uD83E\uDD0F"] = listOf("щепотка","мало","чуть","pinch","small","tiny","little")
+        m["\u270C\uFE0F"] = listOf("победа","мир","виктория","два","victory","peace","v","two")
+        m["\uD83E\uDD1E"] = listOf("удача","пальцы","скрещенные","luck","fingers","crossed","hope")
+        m["\uD83E\uDD1F"] = listOf("любовь","рука","жест","love","hand","sign","ily")
+        m["\uD83E\uDD18"] = listOf("рок","рога","метал","rock","horns","metal","devil")
+        m["\uD83E\uDD19"] = listOf("позвони","шака","прибой","call","shaka","hang loose","surf")
+        m["\uD83D\uDC48"] = listOf("влево","палец","указатель","left","point","back","arrow")
+        m["\uD83D\uDC49"] = listOf("вправо","палец","указатель","right","point","forward","arrow")
+        m["\uD83D\uDC46"] = listOf("вверх","палец","указатель","up","point","above","top")
+        m["\uD83D\uDC47"] = listOf("вниз","палец","указатель","down","point","below","bottom")
+        m["\u261D\uFE0F"] = listOf("вверх","указатель","палец","внимание","up","index","point","attention")
+        m["\uD83D\uDC4D"] = listOf("класс","лайк","палец вверх","хорошо","thumb","up","like","yes","good")
+        m["\uD83D\uDC4E"] = listOf("плохо","дизлайк","палец вниз","нет","thumb","down","dislike","bad","no")
+        m["\u270A"] = listOf("кулак","сила","борьба","fist","power","fight","punch")
+        m["\uD83D\uDC4A"] = listOf("удар","кулак","бум","punch","fist","hit","boom","pow")
+        m["\uD83E\uDD1B"] = listOf("кулак","влево","бро","fist","left","bump")
+        m["\uD83E\uDD1C"] = listOf("кулак","вправо","бро","fist","right","bump")
+        m["\uD83D\uDC4F"] = listOf("аплодисменты","хлопать","браво","clap","applause","bravo","congratulations")
+        m["\uD83D\uDE4C"] = listOf("руки","ура","празднование","поднятые","raised","hands","celebrate","hooray")
+        m["\uD83D\uDC50"] = listOf("руки","ладони","открытые","open","hands","palms")
+        m["\uD83E\uDD32"] = listOf("ладони","вверх","просьба","palms","up","prayer","give")
+        m["\uD83E\uDD1D"] = listOf("рукопожатие","сделка","договор","handshake","deal","agreement","hello")
+        m["\uD83D\uDE4F"] = listOf("молитва","спасибо","пожалуйста","pray","thanks","please","namaste","hope")
         // ── Animals ──
-        m["\uD83D\uDC36"] = listOf("собака", "пёс", "dog", "puppy")
-        m["\uD83D\uDC31"] = listOf("кот", "кошка", "cat", "kitten")
-        m["\uD83D\uDC2D"] = listOf("мышь", "мышка", "mouse")
-        m["\uD83D\uDC39"] = listOf("хомяк", "hamster")
-        m["\uD83D\uDC30"] = listOf("кролик", "заяц", "rabbit", "bunny")
-        m["\uD83E\uDD8A"] = listOf("лиса", "fox")
-        m["\uD83D\uDC3B"] = listOf("медведь", "bear")
-        m["\uD83D\uDC3C"] = listOf("панда", "panda")
-        m["\uD83D\uDC28"] = listOf("коала", "koala")
-        m["\uD83D\uDC2F"] = listOf("тигр", "tiger")
-        m["\uD83E\uDD81"] = listOf("лев", "lion")
-        m["\uD83D\uDC2E"] = listOf("корова", "cow")
-        m["\uD83D\uDC37"] = listOf("свинья", "pig")
-        m["\uD83D\uDC38"] = listOf("лягушка", "жаба", "frog")
-        m["\uD83D\uDC35"] = listOf("обезьяна", "monkey")
-        m["\uD83D\uDC12"] = listOf("обезьяна", "monkey")
-        m["\uD83D\uDC14"] = listOf("курица", "chicken", "hen")
-        m["\uD83D\uDC27"] = listOf("пингвин", "penguin")
-        m["\uD83D\uDC26"] = listOf("птица", "bird")
-        m["\uD83D\uDC24"] = listOf("цыплёнок", "chick")
-        m["\uD83D\uDC23"] = listOf("цыплёнок", "яйцо", "chick", "egg")
-        m["\uD83D\uDC25"] = listOf("цыплёнок", "chick")
-        m["\uD83E\uDD86"] = listOf("утка", "duck")
-        m["\uD83E\uDD85"] = listOf("орёл", "eagle")
-        m["\uD83E\uDD89"] = listOf("сова", "owl")
-        m["\uD83E\uDD87"] = listOf("летучая мышь", "bat")
-        m["\uD83D\uDC3A"] = listOf("волк", "wolf")
-        m["\uD83D\uDC17"] = listOf("кабан", "boar")
-        m["\uD83D\uDC34"] = listOf("лошадь", "конь", "horse")
-        m["\uD83E\uDD84"] = listOf("единорог", "unicorn")
-        m["\uD83D\uDC1D"] = listOf("пчела", "bee", "honey")
-        m["\uD83E\uDD8B"] = listOf("бабочка", "butterfly")
-        m["\uD83D\uDC0C"] = listOf("улитка", "snail")
-        m["\uD83D\uDC1E"] = listOf("жук", "божья коровка", "bug", "ladybug")
-        m["\uD83D\uDC1C"] = listOf("муравей", "ant")
-        m["\uD83D\uDC22"] = listOf("черепаха", "turtle")
-        m["\uD83D\uDC0D"] = listOf("змея", "snake")
-        m["\uD83E\uDD8E"] = listOf("ящерица", "lizard")
-        m["\uD83E\uDD96"] = listOf("динозавр", "dinosaur", "trex")
-        m["\uD83E\uDD95"] = listOf("динозавр", "dinosaur", "sauropod")
-        m["\uD83D\uDC19"] = listOf("осьминог", "octopus")
-        m["\uD83E\uDD91"] = listOf("кальмар", "squid")
-        m["\uD83E\uDD80"] = listOf("краб", "crab")
-        m["\uD83D\uDC21"] = listOf("рыба", "тропическая", "fish", "tropical")
-        m["\uD83D\uDC20"] = listOf("рыба", "тропическая", "fish", "tropical")
-        m["\uD83D\uDC1F"] = listOf("рыба", "fish")
-        m["\uD83D\uDC2C"] = listOf("дельфин", "dolphin")
-        m["\uD83D\uDC33"] = listOf("кит", "whale")
-        // ── Food ──
-        m["\uD83C\uDF4E"] = listOf("яблоко", "красное", "apple", "red")
-        m["\uD83C\uDF50"] = listOf("груша", "pear")
-        m["\uD83C\uDF4A"] = listOf("апельсин", "мандарин", "orange", "tangerine")
-        m["\uD83C\uDF4B"] = listOf("лимон", "lemon")
-        m["\uD83C\uDF4C"] = listOf("банан", "banana")
-        m["\uD83C\uDF49"] = listOf("арбуз", "watermelon")
-        m["\uD83C\uDF47"] = listOf("виноград", "grapes")
-        m["\uD83C\uDF53"] = listOf("клубника", "strawberry")
-        m["\uD83C\uDF48"] = listOf("дыня", "melon")
-        m["\uD83C\uDF52"] = listOf("вишня", "черешня", "cherry")
-        m["\uD83C\uDF51"] = listOf("персик", "peach")
-        m["\uD83C\uDF4D"] = listOf("ананас", "pineapple")
-        m["\uD83E\uDD5D"] = listOf("киви", "kiwi")
-        m["\uD83C\uDF45"] = listOf("помидор", "томат", "tomato")
-        m["\uD83E\uDD51"] = listOf("авокадо", "avocado")
-        m["\uD83C\uDF46"] = listOf("баклажан", "eggplant")
-        m["\uD83E\uDD52"] = listOf("огурец", "cucumber")
-        m["\uD83E\uDD66"] = listOf("брокколи", "broccoli")
-        m["\uD83C\uDF44"] = listOf("гриб", "mushroom")
-        m["\uD83C\uDF5E"] = listOf("хлеб", "bread")
-        m["\uD83E\uDD50"] = listOf("круассан", "croissant")
-        m["\uD83E\uDD56"] = listOf("багет", "хлеб", "baguette")
-        m["\uD83E\uDDC0"] = listOf("сыр", "cheese")
-        m["\uD83C\uDF56"] = listOf("мясо", "кость", "meat", "bone")
-        m["\uD83C\uDF57"] = listOf("курица", "ножка", "poultry", "leg")
-        m["\uD83E\uDD69"] = listOf("стейк", "мясо", "steak", "meat")
-        m["\uD83C\uDF54"] = listOf("бургер", "гамбургер", "burger", "hamburger")
-        m["\uD83C\uDF5F"] = listOf("картошка", "фри", "fries", "french")
-        m["\uD83C\uDF55"] = listOf("пицца", "pizza")
-        m["\uD83C\uDF2D"] = listOf("хотдог", "сосиска", "hotdog")
-        m["\uD83E\uDD6A"] = listOf("сэндвич", "бутерброд", "sandwich")
-        m["\uD83C\uDF2E"] = listOf("тако", "taco")
-        m["\uD83C\uDF2F"] = listOf("буррито", "burrito")
-        m["\uD83E\uDD59"] = listOf("лаваш", "шаурма", "wrap", "pita")
-        m["\uD83C\uDF73"] = listOf("яйцо", "яичница", "egg", "cooking")
-        m["\uD83E\uDD58"] = listOf("рагу", "каша", "pot", "stew")
-        m["\uD83C\uDF72"] = listOf("суп", "soup", "bowl")
-        m["\uD83E\uDD63"] = listOf("миска", "салат", "bowl")
-        m["\uD83E\uDD57"] = listOf("салат", "salad", "green")
-        m["\uD83C\uDF7F"] = listOf("попкорн", "popcorn")
+        m["\uD83D\uDC36"] = listOf("собака","пёс","щенок","гав","dog","puppy","pet","woof","bark")
+        m["\uD83D\uDC31"] = listOf("кот","кошка","котёнок","мяу","cat","kitten","pet","meow","kitty")
+        m["\uD83D\uDC2D"] = listOf("мышь","мышка","грызун","mouse","mice","rodent","squeak")
+        m["\uD83D\uDC39"] = listOf("хомяк","хомячок","грызун","hamster","pet","rodent","cute")
+        m["\uD83D\uDC30"] = listOf("кролик","заяц","зайчик","rabbit","bunny","hare","cute","easter")
+        m["\uD83E\uDD8A"] = listOf("лиса","лисица","хитрая","fox","foxy","cunning","clever")
+        m["\uD83D\uDC3B"] = listOf("медведь","мишка","бурый","bear","teddy","grizzly","brown")
+        m["\uD83D\uDC3C"] = listOf("панда","бамбук","чёрно-белый","panda","bamboo","china","cute")
+        m["\uD83D\uDC28"] = listOf("коала","австралия","мишка","koala","australia","cute","eucalyptus")
+        m["\uD83D\uDC2F"] = listOf("тигр","полосатый","хищник","tiger","stripes","predator","cat")
+        m["\uD83E\uDD81"] = listOf("лев","царь","грива","lion","king","mane","pride")
+        m["\uD83D\uDC2E"] = listOf("корова","бурёнка","молоко","cow","milk","moo","farm")
+        m["\uD83D\uDC37"] = listOf("свинья","поросёнок","хрю","pig","piggy","oink","farm")
+        m["\uD83D\uDC38"] = listOf("лягушка","жаба","ква","frog","toad","ribbit","green")
+        m["\uD83D\uDC35"] = listOf("обезьяна","мартышка","примат","monkey","ape","primate","chimp")
+        m["\uD83D\uDC12"] = listOf("обезьяна","макака","примат","monkey","ape","primate","banana")
+        m["\uD83D\uDC14"] = listOf("курица","петух","несушка","chicken","hen","rooster","farm","poultry")
+        m["\uD83D\uDC27"] = listOf("пингвин","антарктида","лёд","penguin","antarctica","ice","cold","tux")
+        m["\uD83D\uDC26"] = listOf("птица","птичка","пташка","bird","tweet","chirp","fly")
+        m["\uD83D\uDC24"] = listOf("цыплёнок","птенец","маленький","chick","baby","chicken","small")
+        m["\uD83D\uDC23"] = listOf("цыплёнок","яйцо","вылупился","chick","egg","hatching","baby")
+        m["\uD83D\uDC25"] = listOf("цыплёнок","птенец","малыш","chick","baby","front","cute")
+        m["\uD83E\uDD86"] = listOf("утка","уточка","кря","duck","quack","waddle","pond")
+        m["\uD83E\uDD85"] = listOf("орёл","птица","хищник","eagle","hawk","bird","predator","usa")
+        m["\uD83E\uDD89"] = listOf("сова","мудрая","ночь","owl","wise","night","hoot")
+        m["\uD83E\uDD87"] = listOf("летучая мышь","вампир","ночь","bat","vampire","night","halloween")
+        m["\uD83D\uDC3A"] = listOf("волк","серый","хищник","wolf","grey","howl","wild")
+        m["\uD83D\uDC17"] = listOf("кабан","дикий","вепрь","boar","wild","pig","hog")
+        m["\uD83D\uDC34"] = listOf("лошадь","конь","скакун","horse","stallion","mare","equestrian")
+        m["\uD83E\uDD84"] = listOf("единорог","волшебный","рог","unicorn","magic","fantasy","horn","rainbow")
+        m["\uD83D\uDC1D"] = listOf("пчела","мёд","жужжит","bee","honey","buzz","sting","bumblebee")
+        m["\uD83E\uDD8B"] = listOf("бабочка","мотылёк","красивая","butterfly","moth","wings","pretty")
+        m["\uD83D\uDC0C"] = listOf("улитка","медленно","ракушка","snail","slow","shell","sluggish")
+        m["\uD83D\uDC1E"] = listOf("жук","божья коровка","насекомое","bug","ladybug","beetle","insect")
+        m["\uD83D\uDC1C"] = listOf("муравей","насекомое","трудяга","ant","insect","colony","worker")
+        m["\uD83D\uDC22"] = listOf("черепаха","медленно","панцирь","turtle","tortoise","slow","shell")
+        m["\uD83D\uDC0D"] = listOf("змея","гадюка","ползучий","snake","serpent","viper","slither")
+        m["\uD83E\uDD8E"] = listOf("ящерица","рептилия","хамелеон","lizard","reptile","chameleon","gecko")
+        m["\uD83E\uDD96"] = listOf("динозавр","тирекс","хищник","dinosaur","trex","tyrannosaurus","jurassic")
+        m["\uD83E\uDD95"] = listOf("динозавр","бронтозавр","длинношей","dinosaur","sauropod","brontosaurus","dino")
+        m["\uD83D\uDC19"] = listOf("осьминог","щупальца","море","octopus","tentacles","sea","ocean")
+        m["\uD83E\uDD91"] = listOf("кальмар","щупальца","море","squid","tentacles","sea","ocean")
+        m["\uD83E\uDD80"] = listOf("краб","клешни","море","crab","claws","sea","beach","crustacean")
+        m["\uD83D\uDC21"] = listOf("рыба","тропическая","аквариум","fish","tropical","aquarium","nemo")
+        m["\uD83D\uDC20"] = listOf("рыба","тропическая","цветная","fish","tropical","colorful","exotic")
+        m["\uD83D\uDC1F"] = listOf("рыба","рыбка","морская","fish","small","sea","ocean")
+        m["\uD83D\uDC2C"] = listOf("дельфин","море","умный","dolphin","sea","ocean","smart","flipper")
+        m["\uD83D\uDC33"] = listOf("кит","океан","большой","whale","ocean","sea","blow","huge")
+        // ── Food & Drink ──
+        m["\uD83C\uDF4E"] = listOf("яблоко","красное","фрукт","apple","red","fruit","healthy")
+        m["\uD83C\uDF50"] = listOf("груша","фрукт","зелёная","pear","fruit","green")
+        m["\uD83C\uDF4A"] = listOf("апельсин","мандарин","цитрус","orange","tangerine","citrus","fruit")
+        m["\uD83C\uDF4B"] = listOf("лимон","кислый","цитрус","жёлтый","lemon","sour","citrus","yellow")
+        m["\uD83C\uDF4C"] = listOf("банан","жёлтый","фрукт","banana","yellow","fruit","monkey")
+        m["\uD83C\uDF49"] = listOf("арбуз","лето","сочный","ягода","watermelon","summer","juicy","melon")
+        m["\uD83C\uDF47"] = listOf("виноград","вино","гроздь","grapes","wine","bunch","fruit","purple")
+        m["\uD83C\uDF53"] = listOf("клубника","ягода","красная","strawberry","berry","red","sweet")
+        m["\uD83C\uDF48"] = listOf("дыня","фрукт","сладкая","melon","honeydew","fruit","sweet")
+        m["\uD83C\uDF52"] = listOf("вишня","черешня","ягода","cherry","berries","red","fruit")
+        m["\uD83C\uDF51"] = listOf("персик","фрукт","сочный","peach","fruit","juicy","soft")
+        m["\uD83C\uDF4D"] = listOf("ананас","тропический","фрукт","pineapple","tropical","fruit","exotic")
+        m["\uD83E\uDD5D"] = listOf("киви","зелёный","фрукт","kiwi","green","fruit","newzealand")
+        m["\uD83C\uDF45"] = listOf("помидор","томат","красный","овощ","tomato","red","vegetable","salad")
+        m["\uD83E\uDD51"] = listOf("авокадо","зелёный","полезный","avocado","green","healthy","guacamole")
+        m["\uD83C\uDF46"] = listOf("баклажан","фиолетовый","овощ","eggplant","aubergine","purple","vegetable")
+        m["\uD83E\uDD52"] = listOf("огурец","зелёный","овощ","свежий","cucumber","green","vegetable","fresh")
+        m["\uD83E\uDD66"] = listOf("брокколи","зелёный","полезный","овощ","broccoli","green","healthy","vegetable")
+        m["\uD83C\uDF44"] = listOf("гриб","грибок","лес","mushroom","fungus","forest","toadstool")
+        m["\uD83C\uDF5E"] = listOf("хлеб","буханка","выпечка","bread","loaf","bakery","toast")
+        m["\uD83E\uDD50"] = listOf("круассан","выпечка","франция","завтрак","croissant","pastry","france","breakfast")
+        m["\uD83E\uDD56"] = listOf("багет","хлеб","французский","baguette","bread","french","long")
+        m["\uD83E\uDDC0"] = listOf("сыр","жёлтый","молочный","cheese","yellow","dairy","swiss")
+        m["\uD83C\uDF56"] = listOf("мясо","кость","стейк","meat","bone","steak","chop")
+        m["\uD83C\uDF57"] = listOf("курица","ножка","птица","poultry","leg","drumstick","chicken")
+        m["\uD83E\uDD69"] = listOf("стейк","мясо","говядина","жареный","steak","meat","beef","rare")
+        m["\uD83C\uDF54"] = listOf("бургер","гамбургер","фастфуд","burger","hamburger","fastfood","mcdonalds")
+        m["\uD83C\uDF5F"] = listOf("картошка","фри","жареная","fries","french","potato","chips")
+        m["\uD83C\uDF55"] = listOf("пицца","итальянская","сыр","pizza","cheese","italian","slice")
+        m["\uD83C\uDF2D"] = listOf("хотдог","сосиска","булка","hotdog","sausage","frankfurter","bun")
+        m["\uD83E\uDD6A"] = listOf("сэндвич","бутерброд","хлеб","sandwich","sub","bread","lunch")
+        m["\uD83C\uDF2E"] = listOf("тако","мексика","лепёшка","taco","mexican","tortilla","shell")
+        m["\uD83C\uDF2F"] = listOf("буррито","мексика","рулет","burrito","mexican","wrap","bean")
+        m["\uD83E\uDD59"] = listOf("лаваш","шаурма","обёртка","wrap","pita","shawarma","flatbread")
+        m["\uD83C\uDF73"] = listOf("яйцо","яичница","завтрак","готовка","egg","cooking","breakfast","frying")
+        m["\uD83E\uDD58"] = listOf("рагу","каша","горшок","тушить","pot","stew","casserole","cook")
+        m["\uD83C\uDF72"] = listOf("суп","бульон","горячий","миска","soup","bowl","hot","broth")
+        m["\uD83E\uDD63"] = listOf("миска","боул","салат","каша","bowl","salad","acai","smoothie")
+        m["\uD83E\uDD57"] = listOf("салат","зелёный","свежий","овощной","salad","green","fresh","healthy")
+        m["\uD83C\uDF7F"] = listOf("попкорн","кино","снэк","popcorn","movie","cinema","snack")
         // ── Sports ──
-        m["\u26BD"] = listOf("футбол", "мяч", "soccer", "football")
-        m["\uD83C\uDFC0"] = listOf("баскетбол", "basketball")
-        m["\uD83C\uDFC8"] = listOf("американский футбол", "football")
-        m["\u26BE"] = listOf("бейсбол", "baseball")
-        m["\uD83C\uDFBE"] = listOf("теннис", "tennis")
-        m["\uD83C\uDFD0"] = listOf("волейбол", "volleyball")
-        m["\uD83C\uDFC9"] = listOf("регби", "rugby")
-        m["\uD83C\uDFB1"] = listOf("бильярд", "pool", "billiards")
-        m["\uD83C\uDFD3"] = listOf("пинг-понг", "настольный теннис", "ping-pong")
-        m["\uD83C\uDFF8"] = listOf("бадминтон", "badminton")
-        m["\uD83C\uDFD2"] = listOf("хоккей", "hockey")
-        m["\uD83C\uDFCF"] = listOf("крикет", "cricket")
-        m["\u26F3"] = listOf("гольф", "golf")
-        m["\uD83C\uDFF9"] = listOf("лук", "стрельба", "bow", "archery")
-        m["\uD83C\uDFA3"] = listOf("рыбалка", "удочка", "fishing")
-        m["\uD83E\uDD4A"] = listOf("бокс", "boxing", "glove")
-        m["\uD83E\uDD4B"] = listOf("боевые искусства", "карате", "martial")
-        m["\uD83C\uDFBD"] = listOf("лакросс", "lacrosse")
-        m["\uD83C\uDFBF"] = listOf("лыжи", "ski", "skiing")
-        m["\uD83C\uDFC2"] = listOf("сноуборд", "snowboard")
-        m["\uD83C\uDFC4"] = listOf("сёрфинг", "surfing")
-        m["\uD83C\uDFCA"] = listOf("плавание", "swimming")
-        m["\uD83E\uDD3D"] = listOf("водное поло", "water polo")
-        m["\uD83D\uDEB4"] = listOf("велосипед", "cycling", "bike")
-        // ── Travel ──
-        m["\uD83D\uDE97"] = listOf("машина", "авто", "car", "auto")
-        m["\uD83D\uDE95"] = listOf("такси", "taxi", "cab")
-        m["\uD83D\uDE99"] = listOf("внедорожник", "джип", "suv")
-        m["\uD83D\uDE8C"] = listOf("автобус", "bus")
-        m["\uD83D\uDE93"] = listOf("полиция", "police")
-        m["\uD83D\uDE91"] = listOf("скорая", "ambulance")
-        m["\uD83D\uDE92"] = listOf("пожарная", "fire", "truck")
-        m["\uD83D\uDE9A"] = listOf("грузовик", "фура", "truck")
-        m["\uD83D\uDE9B"] = listOf("фура", "грузовик", "truck")
-        m["\uD83D\uDE9C"] = listOf("трактор", "tractor")
-        m["\uD83D\uDEB2"] = listOf("велосипед", "bicycle", "bike")
-        m["\uD83D\uDE94"] = listOf("полиция", "police")
-        m["\uD83D\uDE8D"] = listOf("автобус", "bus")
-        m["\uD83D\uDE98"] = listOf("машина", "car")
-        m["\uD83D\uDE84"] = listOf("поезд", "скорый", "train", "bullet")
-        m["\uD83D\uDE85"] = listOf("поезд", "скорый", "train", "bullet")
-        m["\uD83D\uDE82"] = listOf("поезд", "вагон", "train", "locomotive")
-        m["\uD83D\uDE86"] = listOf("поезд", "train")
-        m["\uD83D\uDE87"] = listOf("метро", "metro", "subway")
-        m["\uD83D\uDE89"] = listOf("станция", "вокзал", "station")
-        m["\u2708\uFE0F"] = listOf("самолёт", "airplane", "plane")
-        m["\uD83D\uDEEB"] = listOf("самолёт", "взлёт", "airplane", "departure")
-        m["\uD83D\uDE80"] = listOf("ракета", "космос", "rocket", "space")
-        m["\uD83D\uDE81"] = listOf("вертолёт", "helicopter")
+        m["\u26BD"] = listOf("футбол","мяч","гол","спорт","soccer","football","ball","goal","sport")
+        m["\uD83C\uDFC0"] = listOf("баскетбол","мяч","корзина","basketball","ball","hoop","nba","sport")
+        m["\uD83C\uDFC8"] = listOf("американский футбол","мяч","овальный","football","american","nfl","sport")
+        m["\u26BE"] = listOf("бейсбол","мяч","бита","baseball","ball","bat","mlb","sport")
+        m["\uD83C\uDFBE"] = listOf("теннис","мяч","ракетка","tennis","ball","racket","sport")
+        m["\uD83C\uDFD0"] = listOf("волейбол","мяч","сетка","volleyball","ball","net","beach","sport")
+        m["\uD83C\uDFC9"] = listOf("регби","мяч","овальный","rugby","ball","sport","tackle")
+        m["\uD83C\uDFB1"] = listOf("бильярд","пул","шар","pool","billiards","ball","8ball","cue")
+        m["\uD83C\uDFD3"] = listOf("пинг-понг","настольный теннис","ракетка","ping-pong","table tennis","paddle")
+        m["\uD83C\uDFF8"] = listOf("бадминтон","волан","ракетка","badminton","shuttlecock","racket")
+        m["\uD83C\uDFD2"] = listOf("хоккей","шайба","клюшка","лёд","hockey","puck","stick","ice")
+        m["\uD83C\uDFCF"] = listOf("крикет","бита","cricket","bat","ball","sport")
+        m["\u26F3"] = listOf("гольф","лунка","клюшка","golf","hole","club","green")
+        m["\uD83C\uDFF9"] = listOf("лук","стрельба","стрела","bow","arrow","archery","target")
+        m["\uD83C\uDFA3"] = listOf("рыбалка","удочка","рыба","fishing","rod","fish","catch")
+        m["\uD83E\uDD4A"] = listOf("бокс","перчатка","удар","boxing","glove","punch","fight")
+        m["\uD83E\uDD4B"] = listOf("боевые искусства","карате","пояс","martial arts","karate","belt","judo")
+        m["\uD83C\uDFBD"] = listOf("лакросс","клюшка","мяч","lacrosse","stick","sport")
+        m["\uD83C\uDFBF"] = listOf("лыжи","зима","горы","снег","ski","skiing","winter","snow","mountain")
+        m["\uD83C\uDFC2"] = listOf("сноуборд","зима","доска","снег","snowboard","winter","snow","board")
+        m["\uD83C\uDFC4"] = listOf("сёрфинг","волна","доска","океан","surfing","wave","board","ocean","beach")
+        m["\uD83C\uDFCA"] = listOf("плавание","пловец","бассейн","вода","swimming","swimmer","pool","water")
+        m["\uD83E\uDD3D"] = listOf("водное поло","бассейн","мяч","water polo","pool","ball","swimming")
+        m["\uD83D\uDEB4"] = listOf("велосипед","велик","педали","cycling","bike","bicycle","ride","pedal")
+        // ── Travel & Transport ──
+        m["\uD83D\uDE97"] = listOf("машина","авто","автомобиль","car","auto","vehicle","drive","red")
+        m["\uD83D\uDE95"] = listOf("такси","жёлтый","поездка","taxi","cab","yellow","ride","uber")
+        m["\uD83D\uDE99"] = listOf("внедорожник","джип","suv","jeep","offroad","4x4")
+        m["\uD83D\uDE8C"] = listOf("автобус","общественный","транспорт","bus","public","transit","city")
+        m["\uD83D\uDE93"] = listOf("полиция","машина","мигалка","police","car","patrol","cop","siren")
+        m["\uD83D\uDE91"] = listOf("скорая","помощь","медицина","ambulance","emergency","medical","hospital")
+        m["\uD83D\uDE92"] = listOf("пожарная","машина","огонь","fire","truck","engine","firefighter","red")
+        m["\uD83D\uDE9A"] = listOf("грузовик","доставка","фура","truck","delivery","cargo","moving")
+        m["\uD83D\uDE9B"] = listOf("фура","грузовик","большой","truck","semi","trailer","cargo","big")
+        m["\uD83D\uDE9C"] = listOf("трактор","ферма","поле","tractor","farm","field","agriculture")
+        m["\uD83D\uDEB2"] = listOf("велосипед","велик","двухколёсный","bicycle","bike","cycling","pedal")
+        m["\uD83D\uDE94"] = listOf("полиция","патруль","сирена","police","patrol","cop","oncoming")
+        m["\uD83D\uDE8D"] = listOf("автобус","троллейбус","транспорт","bus","transit","oncoming")
+        m["\uD83D\uDE98"] = listOf("машина","авто","sedan","car","vehicle","oncoming")
+        m["\uD83D\uDE84"] = listOf("поезд","скорый","синкансен","bullet","train","shinkansen","fast","japan")
+        m["\uD83D\uDE85"] = listOf("поезд","скоростной","экспресс","bullet","train","high-speed","express")
+        m["\uD83D\uDE82"] = listOf("поезд","паровоз","вагон","locomotive","train","steam","railway")
+        m["\uD83D\uDE86"] = listOf("поезд","электричка","рельсы","train","railway","rail","commuter")
+        m["\uD83D\uDE87"] = listOf("метро","подземка","subway","metro","underground","tube","transport")
+        m["\uD83D\uDE89"] = listOf("станция","вокзал","платформа","station","platform","railway","terminal")
+        m["\u2708\uFE0F"] = listOf("самолёт","полёт","путешествие","airplane","plane","flight","travel","fly")
+        m["\uD83D\uDEEB"] = listOf("самолёт","взлёт","вылет","airplane","departure","takeoff","travel")
+        m["\uD83D\uDE80"] = listOf("ракета","космос","запуск","скорость","rocket","space","launch","fast","nasa")
+        m["\uD83D\uDE81"] = listOf("вертолёт","полёт","helicopter","chopper","flight","copter")
         // ── Hearts & Symbols ──
-        m["\u2764\uFE0F"] = listOf("сердце", "красное", "любовь", "heart", "red", "love")
-        m["\uD83E\uDDE1"] = listOf("сердце", "оранжевое", "heart", "orange")
-        m["\uD83D\uDC9B"] = listOf("сердце", "жёлтое", "heart", "yellow")
-        m["\uD83D\uDC9A"] = listOf("сердце", "зелёное", "heart", "green")
-        m["\uD83D\uDC99"] = listOf("сердце", "синее", "heart", "blue")
-        m["\uD83D\uDC9C"] = listOf("сердце", "фиолетовое", "heart", "purple")
-        m["\uD83D\uDDA4"] = listOf("сердце", "чёрное", "heart", "black")
-        m["\uD83E\uDD0D"] = listOf("сердце", "белое", "heart", "white")
-        m["\uD83E\uDD0E"] = listOf("сердце", "коричневое", "heart", "brown")
-        m["\uD83D\uDC94"] = listOf("сердце", "разбитое", "broken", "heart")
-        m["\u2763\uFE0F"] = listOf("сердце", "восклицание", "heart", "exclamation")
-        m["\uD83D\uDC95"] = listOf("сердца", "hearts", "two")
-        m["\uD83D\uDC9E"] = listOf("сердца", "вращающиеся", "revolving", "hearts")
-        m["\uD83D\uDC93"] = listOf("сердце", "бьющееся", "heartbeat")
-        m["\uD83D\uDC97"] = listOf("сердце", "растущее", "growing", "heart")
-        m["\uD83D\uDC96"] = listOf("сердце", "искры", "sparkling", "heart")
-        m["\uD83D\uDC9D"] = listOf("сердце", "лента", "ribbon", "heart")
-        m["\uD83D\uDC98"] = listOf("сердце", "стрела", "arrow", "cupid")
-        m["\uD83D\uDC8C"] = listOf("письмо", "любовь", "love", "letter")
-        m["\uD83D\uDD34"] = listOf("круг", "красный", "circle", "red")
-        m["\uD83D\uDFE0"] = listOf("круг", "оранжевый", "circle", "orange")
-        m["\uD83D\uDFE1"] = listOf("круг", "жёлтый", "circle", "yellow")
-        m["\uD83D\uDFE2"] = listOf("круг", "зелёный", "circle", "green")
-        m["\uD83D\uDD35"] = listOf("круг", "синий", "circle", "blue")
-        m["\uD83D\uDFE3"] = listOf("круг", "фиолетовый", "circle", "purple")
-        m["\u26AB"] = listOf("круг", "чёрный", "circle", "black")
-        m["\u26AA"] = listOf("круг", "белый", "circle", "white")
-        m["\uD83D\uDFE4"] = listOf("круг", "коричневый", "circle", "brown")
-        m["\uD83D\uDD3A"] = listOf("треугольник", "вверх", "triangle", "up", "red")
-        m["\uD83D\uDD3B"] = listOf("треугольник", "вниз", "triangle", "down", "red")
-        m["\uD83D\uDD38"] = listOf("ромб", "маленький", "diamond", "small", "orange")
-        m["\uD83D\uDD39"] = listOf("ромб", "маленький", "diamond", "small", "blue")
+        m["\u2764\uFE0F"] = listOf("сердце","красное","любовь","heart","red","love","valentine")
+        m["\uD83E\uDDE1"] = listOf("сердце","оранжевое","тёплое","heart","orange","warm")
+        m["\uD83D\uDC9B"] = listOf("сердце","жёлтое","дружба","heart","yellow","friendship")
+        m["\uD83D\uDC9A"] = listOf("сердце","зелёное","здоровье","heart","green","health","nature")
+        m["\uD83D\uDC99"] = listOf("сердце","синее","спокойствие","heart","blue","trust","calm")
+        m["\uD83D\uDC9C"] = listOf("сердце","фиолетовое","творчество","heart","purple","creative")
+        m["\uD83D\uDDA4"] = listOf("сердце","чёрное","тёмное","грусть","heart","black","dark","goth")
+        m["\uD83E\uDD0D"] = listOf("сердце","белое","чистое","мир","heart","white","pure","peace")
+        m["\uD83E\uDD0E"] = listOf("сердце","коричневое","тепло","heart","brown","warm","earth")
+        m["\uD83D\uDC94"] = listOf("сердце","разбитое","расставание","грусть","broken","heart","sad","breakup")
+        m["\u2763\uFE0F"] = listOf("сердце","восклицание","важно","heart","exclamation","important")
+        m["\uD83D\uDC95"] = listOf("сердца","два","пара","hearts","two","couple","love")
+        m["\uD83D\uDC9E"] = listOf("сердца","вращающиеся","любовь","revolving","hearts","love","spinning")
+        m["\uD83D\uDC93"] = listOf("сердце","бьющееся","пульс","heartbeat","beating","pulse","alive")
+        m["\uD83D\uDC97"] = listOf("сердце","растущее","увеличение","growing","heart","bigger","love")
+        m["\uD83D\uDC96"] = listOf("сердце","искры","блестящее","sparkling","heart","sparkle","shine")
+        m["\uD83D\uDC9D"] = listOf("сердце","лента","подарок","ribbon","heart","gift","bow")
+        m["\uD83D\uDC98"] = listOf("сердце","стрела","купидон","arrow","cupid","heart","love","valentine")
+        m["\uD83D\uDC8C"] = listOf("письмо","любовь","конверт","love","letter","envelope","mail","valentine")
+        m["\uD83D\uDD34"] = listOf("круг","красный","точка","circle","red","dot","ball")
+        m["\uD83D\uDFE0"] = listOf("круг","оранжевый","точка","circle","orange","dot")
+        m["\uD83D\uDFE1"] = listOf("круг","жёлтый","точка","circle","yellow","dot")
+        m["\uD83D\uDFE2"] = listOf("круг","зелёный","точка","circle","green","dot")
+        m["\uD83D\uDD35"] = listOf("круг","синий","точка","circle","blue","dot")
+        m["\uD83D\uDFE3"] = listOf("круг","фиолетовый","точка","circle","purple","dot")
+        m["\u26AB"] = listOf("круг","чёрный","точка","circle","black","dot")
+        m["\u26AA"] = listOf("круг","белый","точка","circle","white","dot")
+        m["\uD83D\uDFE4"] = listOf("круг","коричневый","точка","circle","brown","dot")
+        m["\uD83D\uDD3A"] = listOf("треугольник","красный","вверх","опасность","triangle","red","up","warning")
+        m["\uD83D\uDD3B"] = listOf("треугольник","красный","вниз","triangle","red","down")
+        m["\uD83D\uDD38"] = listOf("ромб","оранжевый","маленький","diamond","small","orange")
+        m["\uD83D\uDD39"] = listOf("ромб","синий","маленький","diamond","small","blue")
+        // ── Flags ──
+        m["\uD83C\uDDF7\uD83C\uDDFA"] = listOf("россия","ру","флаг","russia","ru","flag","russian","москва","moscow")
+        m["\uD83C\uDDFA\uD83C\uDDF8"] = listOf("сша","америка","флаг","usa","us","america","flag","american","states")
+        m["\uD83C\uDDEC\uD83C\uDDE7"] = listOf("великобритания","англия","британия","флаг","uk","gb","britain","england","flag","british")
+        m["\uD83C\uDDE9\uD83C\uDDEA"] = listOf("германия","немецкий","флаг","germany","de","flag","german","deutsch","berlin")
+        m["\uD83C\uDDEB\uD83C\uDDF7"] = listOf("франция","французский","флаг","france","fr","flag","french","paris")
+        m["\uD83C\uDDEE\uD83C\uDDF9"] = listOf("италия","итальянский","флаг","italy","it","flag","italian","rome","roma")
+        m["\uD83C\uDDEA\uD83C\uDDF8"] = listOf("испания","испанский","флаг","spain","es","flag","spanish","madrid")
+        m["\uD83C\uDDF5\uD83C\uDDF9"] = listOf("португалия","португальский","флаг","portugal","pt","flag","portuguese","lisbon")
+        m["\uD83C\uDDE7\uD83C\uDDF7"] = listOf("бразилия","бразильский","флаг","brazil","br","flag","brazilian","rio")
+        m["\uD83C\uDDE8\uD83C\uDDF3"] = listOf("китай","китайский","флаг","china","cn","flag","chinese","beijing")
+        m["\uD83C\uDDEF\uD83C\uDDF5"] = listOf("япония","японский","флаг","japan","jp","flag","japanese","tokyo")
+        m["\uD83C\uDDF0\uD83C\uDDF7"] = listOf("корея","южная","корейский","флаг","korea","kr","south","flag","korean","seoul")
+        m["\uD83C\uDDEE\uD83C\uDDF3"] = listOf("индия","индийский","флаг","india","in","flag","indian","delhi")
+        m["\uD83C\uDDE6\uD83C\uDDEA"] = listOf("оаэ","эмираты","дубай","флаг","uae","emirates","dubai","flag","arab")
+        m["\uD83C\uDDF9\uD83C\uDDF7"] = listOf("турция","турецкий","флаг","turkey","tr","flag","turkish","istanbul","ankara")
+        m["\uD83C\uDDFA\uD83C\uDDE6"] = listOf("украина","украинский","флаг","ukraine","ua","flag","ukrainian","kyiv","kiev")
+        m["\uD83C\uDDE7\uD83C\uDDFE"] = listOf("беларусь","белорусский","флаг","belarus","by","flag","belarusian","minsk")
+        m["\uD83C\uDDF0\uD83C\uDDFF"] = listOf("казахстан","казахский","флаг","kazakhstan","kz","flag","kazakh","astana")
+        m["\uD83C\uDDFA\uD83C\uDDFF"] = listOf("узбекистан","узбекский","флаг","uzbekistan","uz","flag","uzbek","tashkent")
+        m["\uD83C\uDDEC\uD83C\uDDEA"] = listOf("грузия","грузинский","флаг","georgia","ge","flag","georgian","tbilisi")
+        m["\uD83C\uDDE6\uD83C\uDDF2"] = listOf("армения","армянский","флаг","armenia","am","flag","armenian","yerevan")
+        m["\uD83C\uDDE6\uD83C\uDDFF"] = listOf("азербайджан","азербайджанский","флаг","azerbaijan","az","flag","baku")
+        m["\uD83C\uDDF5\uD83C\uDDF1"] = listOf("польша","польский","флаг","poland","pl","flag","polish","warsaw")
+        m["\uD83C\uDDE8\uD83C\uDDE6"] = listOf("канада","канадский","флаг","canada","ca","flag","canadian","ottawa","maple")
+        m["\uD83C\uDDE6\uD83C\uDDFA"] = listOf("австралия","австралийский","флаг","australia","au","flag","australian","sydney")
+        m["\uD83C\uDDF2\uD83C\uDDFD"] = listOf("мексика","мексиканский","флаг","mexico","mx","flag","mexican")
+        m["\uD83C\uDDE6\uD83C\uDDF7"] = listOf("аргентина","аргентинский","флаг","argentina","ar","flag","argentine","buenos aires")
+        m["\uD83C\uDDEE\uD83C\uDDF1"] = listOf("израиль","израильский","флаг","israel","il","flag","israeli","jerusalem")
+        m["\uD83C\uDDF8\uD83C\uDDE6"] = listOf("саудовская аравия","саудиты","флаг","saudi","arabia","sa","flag","riyadh")
+        m["\uD83C\uDDEA\uD83C\uDDEC"] = listOf("египет","египетский","флаг","egypt","eg","flag","egyptian","cairo")
+        m["\uD83C\uDDF9\uD83C\uDDED"] = listOf("таиланд","тайский","флаг","thailand","th","flag","thai","bangkok")
+        m["\uD83C\uDDFB\uD83C\uDDF3"] = listOf("вьетнам","вьетнамский","флаг","vietnam","vn","flag","vietnamese","hanoi")
+        m["\uD83C\uDDF3\uD83C\uDDF1"] = listOf("нидерланды","голландия","нидерландский","флаг","netherlands","nl","holland","dutch","flag","amsterdam")
+        m["\uD83C\uDDE7\uD83C\uDDEA"] = listOf("бельгия","бельгийский","флаг","belgium","be","flag","belgian","brussels")
+        m["\uD83C\uDDE8\uD83C\uDDED"] = listOf("швейцария","швейцарский","флаг","switzerland","ch","flag","swiss","zurich","bern")
+        m["\uD83C\uDDE6\uD83C\uDDF9"] = listOf("австрия","австрийский","флаг","austria","at","flag","austrian","vienna","wien")
+        m["\uD83C\uDDF8\uD83C\uDDEA"] = listOf("швеция","шведский","флаг","sweden","se","flag","swedish","stockholm")
+        m["\uD83C\uDDF3\uD83C\uDDF4"] = listOf("норвегия","норвежский","флаг","norway","no","flag","norwegian","oslo")
+        m["\uD83C\uDDE9\uD83C\uDDF0"] = listOf("дания","датский","флаг","denmark","dk","flag","danish","copenhagen")
+        m["\uD83C\uDDEB\uD83C\uDDEE"] = listOf("финляндия","финский","флаг","finland","fi","flag","finnish","helsinki")
+        m["\uD83C\uDDEE\uD83C\uDDE9"] = listOf("индонезия","индонезийский","флаг","indonesia","id","flag","indonesian","jakarta")
+        m["\uD83C\uDDF3\uD83C\uDDFF"] = listOf("новая зеландия","новозеландский","флаг","new zealand","nz","flag","kiwi","wellington")
+        m["\uD83C\uDDEC\uD83C\uDDF7"] = listOf("греция","греческий","флаг","greece","gr","flag","greek","athens")
+        m["\uD83C\uDDE8\uD83C\uDDFF"] = listOf("чехия","чешский","флаг","czechia","czech","cz","flag","prague")
+        m["\uD83C\uDDF7\uD83C\uDDF4"] = listOf("румыния","румынский","флаг","romania","ro","flag","romanian","bucharest")
+        m["\uD83C\uDDED\uD83C\uDDFA"] = listOf("венгрия","венгерский","флаг","hungary","hu","flag","hungarian","budapest")
+        m["\uD83C\uDDEE\uD83C\uDDEA"] = listOf("ирландия","ирландский","флаг","ireland","ie","flag","irish","dublin")
+        m["\uD83C\uDDF8\uD83C\uDDEC"] = listOf("сингапур","сингапурский","флаг","singapore","sg","flag","singaporean")
+        m["\uD83C\uDDF2\uD83C\uDDFE"] = listOf("малайзия","малайзийский","флаг","malaysia","my","flag","malaysian","kuala lumpur")
+        m["\uD83C\uDDF5\uD83C\uDDED"] = listOf("филиппины","филиппинский","флаг","philippines","ph","flag","filipino","manila")
+        m["\uD83C\uDDE8\uD83C\uDDF1"] = listOf("чили","чилийский","флаг","chile","cl","flag","chilean","santiago")
+        m["\uD83C\uDDE8\uD83C\uDDF4"] = listOf("колумбия","колумбийский","флаг","colombia","co","flag","colombian","bogota")
+        m["\uD83C\uDDF5\uD83C\uDDEA"] = listOf("перу","перуанский","флаг","peru","pe","flag","peruvian","lima")
+        m["\uD83C\uDDE8\uD83C\uDDFA"] = listOf("куба","кубинский","флаг","cuba","cu","flag","cuban","havana")
+        m["\uD83C\uDDF3\uD83C\uDDEC"] = listOf("нигерия","нигерийский","флаг","nigeria","ng","flag","nigerian","lagos","abuja")
+        m["\uD83C\uDDFF\uD83C\uDDE6"] = listOf("юар","южная африка","флаг","south africa","za","flag","african","cape town")
+        m["\uD83C\uDDF0\uD83C\uDDEA"] = listOf("кения","кенийский","флаг","kenya","ke","flag","kenyan","nairobi")
+        m["\uD83C\uDDF2\uD83C\uDDE6"] = listOf("марокко","марокканский","флаг","morocco","ma","flag","moroccan","rabat")
+        m["\uD83C\uDDF5\uD83C\uDDF0"] = listOf("пакистан","пакистанский","флаг","pakistan","pk","flag","pakistani","islamabad")
+        m["\uD83C\uDDE7\uD83C\uDDE9"] = listOf("бангладеш","бангладешский","флаг","bangladesh","bd","flag","bangladeshi","dhaka")
+        m["\uD83C\uDDEE\uD83C\uDDF6"] = listOf("ирак","иракский","флаг","iraq","iq","flag","iraqi","baghdad")
+        m["\uD83C\uDDEE\uD83C\uDDF7"] = listOf("иран","иранский","флаг","iran","ir","flag","iranian","tehran","persia")
+        m["\uD83C\uDDF7\uD83C\uDDF8"] = listOf("сербия","сербский","флаг","serbia","rs","flag","serbian","belgrade")
+        m["\uD83C\uDDED\uD83C\uDDF7"] = listOf("хорватия","хорватский","флаг","croatia","hr","flag","croatian","zagreb")
+        m["\uD83C\uDDE7\uD83C\uDDEC"] = listOf("болгария","болгарский","флаг","bulgaria","bg","flag","bulgarian","sofia")
+        m["\uD83C\uDDF1\uD83C\uDDF9"] = listOf("литва","литовский","флаг","lithuania","lt","flag","lithuanian","vilnius")
+        m["\uD83C\uDDF1\uD83C\uDDFB"] = listOf("латвия","латвийский","флаг","latvia","lv","flag","latvian","riga")
+        m["\uD83C\uDDEA\uD83C\uDDEA"] = listOf("эстония","эстонский","флаг","estonia","ee","flag","estonian","tallinn")
+        m["\uD83C\uDDF2\uD83C\uDDE9"] = listOf("молдова","молдавский","флаг","moldova","md","flag","moldovan","chisinau")
+        m["\uD83C\uDDF0\uD83C\uDDEC"] = listOf("кыргызстан","киргизский","флаг","kyrgyzstan","kg","flag","kyrgyz","bishkek")
+        m["\uD83C\uDDF9\uD83C\uDDEF"] = listOf("таджикистан","таджикский","флаг","tajikistan","tj","flag","tajik","dushanbe")
+        m["\uD83C\uDDF9\uD83C\uDDF2"] = listOf("туркменистан","туркменский","флаг","turkmenistan","tm","flag","turkmen","ashgabat")
+        m["\uD83C\uDDF2\uD83C\uDDF3"] = listOf("монголия","монгольский","флаг","mongolia","mn","flag","mongolian","ulaanbaatar")
+        m["\uD83C\uDDEF\uD83C\uDDF4"] = listOf("иордания","иорданский","флаг","jordan","jo","flag","jordanian","amman")
+        m["\uD83C\uDDF1\uD83C\uDDE7"] = listOf("ливан","ливанский","флаг","lebanon","lb","flag","lebanese","beirut")
+        m["\uD83C\uDDF6\uD83C\uDDE6"] = listOf("катар","катарский","флаг","qatar","qa","flag","qatari","doha")
+        m["\uD83C\uDDF0\uD83C\uDDFC"] = listOf("кувейт","кувейтский","флаг","kuwait","kw","flag","kuwaiti")
+        m["\uD83C\uDDE7\uD83C\uDDED"] = listOf("бахрейн","бахрейнский","флаг","bahrain","bh","flag","bahraini","manama")
+        m["\uD83C\uDDF4\uD83C\uDDF2"] = listOf("оман","оманский","флаг","oman","om","flag","omani","muscat")
+        m["\uD83C\uDDFE\uD83C\uDDEA"] = listOf("йемен","йеменский","флаг","yemen","ye","flag","yemeni","sanaa")
+        m["\uD83C\uDDF8\uD83C\uDDFE"] = listOf("сирия","сирийский","флаг","syria","sy","flag","syrian","damascus")
+        m["\uD83C\uDDE8\uD83C\uDDFE"] = listOf("кипр","кипрский","флаг","cyprus","cy","flag","cypriot","nicosia")
+        m["\uD83C\uDDF2\uD83C\uDDF9"] = listOf("мальта","мальтийский","флаг","malta","mt","flag","maltese","valletta")
+        m["\uD83C\uDDEE\uD83C\uDDF8"] = listOf("исландия","исландский","флаг","iceland","is","flag","icelandic","reykjavik")
+        m["\uD83C\uDDF1\uD83C\uDDFA"] = listOf("люксембург","люксембургский","флаг","luxembourg","lu","flag")
+        m["\uD83C\uDDF2\uD83C\uDDE8"] = listOf("монако","монакский","флаг","monaco","mc","flag")
+        m["\uD83C\uDDFB\uD83C\uDDE6"] = listOf("ватикан","папа","флаг","vatican","va","flag","pope","holy see")
+        m["\uD83C\uDDE6\uD83C\uDDE9"] = listOf("андорра","андоррский","флаг","andorra","ad","flag")
+        m["\uD83C\uDDF1\uD83C\uDDEE"] = listOf("лихтенштейн","флаг","liechtenstein","li","flag")
+        m["\uD83C\uDDF8\uD83C\uDDF2"] = listOf("сан-марино","флаг","san marino","sm","flag")
+        m["\uD83C\uDDF8\uD83C\uDDF0"] = listOf("словакия","словацкий","флаг","slovakia","sk","flag","slovak","bratislava")
+        m["\uD83C\uDDF8\uD83C\uDDEE"] = listOf("словения","словенский","флаг","slovenia","si","flag","slovenian","ljubljana")
+        m["\uD83C\uDDE6\uD83C\uDDF1"] = listOf("албания","албанский","флаг","albania","al","flag","albanian","tirana")
+        m["\uD83C\uDDF2\uD83C\uDDF0"] = listOf("северная македония","македонский","флаг","north macedonia","mk","flag","macedonian","skopje")
+        m["\uD83C\uDDF2\uD83C\uDDEA"] = listOf("черногория","черногорский","флаг","montenegro","me","flag","montenegrin","podgorica")
+        m["\uD83C\uDDE7\uD83C\uDDE6"] = listOf("босния","герцеговина","боснийский","флаг","bosnia","ba","flag","bosnian","sarajevo")
+        m["\uD83C\uDDFD\uD83C\uDDF0"] = listOf("косово","косовский","флаг","kosovo","xk","flag","pristina")
+        m["\uD83C\uDDF5\uD83C\uDDF7"] = listOf("пуэрто-рико","флаг","puerto rico","pr","flag")
+        m["\uD83C\uDDED\uD83C\uDDF0"] = listOf("гонконг","флаг","hong kong","hk","flag")
+        m["\uD83C\uDDF9\uD83C\uDDFC"] = listOf("тайвань","тайваньский","флаг","taiwan","tw","flag","taiwanese","taipei")
+        m["\uD83C\uDDF2\uD83C\uDDF4"] = listOf("макао","флаг","macao","macau","mo","flag")
+        m["\uD83C\uDDEB\uD83C\uDDF7"] = listOf("франция","французский","флаг","france","fr","flag","french","paris")
+        m["\uD83C\uDDE8\uD83C\uDDF7"] = listOf("коста-рика","костариканский","флаг","costa rica","cr","flag")
+        m["\uD83C\uDDEF\uD83C\uDDF2"] = listOf("ямайка","ямайский","флаг","jamaica","jm","flag","jamaican","kingston")
+        m["\uD83C\uDDF9\uD83C\uDDF9"] = listOf("тринидад","тобаго","флаг","trinidad","tobago","tt","flag")
+        m["\uD83C\uDDF5\uD83C\uDDE6"] = listOf("панама","панамский","флаг","panama","pa","flag")
+        m["\uD83C\uDDEC\uD83C\uDDF9"] = listOf("гватемала","флаг","guatemala","gt","flag")
+        m["\uD83C\uDDED\uD83C\uDDF3"] = listOf("гондурас","флаг","honduras","hn","flag")
+        m["\uD83C\uDDF3\uD83C\uDDEE"] = listOf("никарагуа","флаг","nicaragua","ni","flag")
+        m["\uD83C\uDDF8\uD83C\uDDFB"] = listOf("сальвадор","флаг","el salvador","sv","flag")
+        m["\uD83C\uDDE9\uD83C\uDDF4"] = listOf("доминикана","доминиканский","флаг","dominican republic","do","flag","dominican")
+        m["\uD83C\uDDED\uD83C\uDDF9"] = listOf("гаити","флаг","haiti","ht","flag")
+        m["\uD83C\uDDEA\uD83C\uDDE8"] = listOf("эквадор","флаг","ecuador","ec","flag")
+        m["\uD83C\uDDFB\uD83C\uDDEA"] = listOf("венесуэла","флаг","venezuela","ve","flag","venezuelan")
+        m["\uD83C\uDDE7\uD83C\uDDF4"] = listOf("боливия","флаг","bolivia","bo","flag","bolivian")
+        m["\uD83C\uDDF5\uD83C\uDDFE"] = listOf("парагвай","флаг","paraguay","py","flag")
+        m["\uD83C\uDDFA\uD83C\uDDFE"] = listOf("уругвай","флаг","uruguay","uy","flag","uruguayan")
+        m["\uD83C\uDDEC\uD83C\uDDED"] = listOf("гана","ганский","флаг","ghana","gh","flag","ghanaian","accra")
+        m["\uD83C\uDDEA\uD83C\uDDF9"] = listOf("эфиопия","эфиопский","флаг","ethiopia","et","flag","ethiopian","addis ababa")
+        m["\uD83C\uDDF9\uD83C\uDDFF"] = listOf("танзания","танзанийский","флаг","tanzania","tz","flag","tanzanian","dodoma")
+        m["\uD83C\uDDFA\uD83C\uDDEC"] = listOf("уганда","угандийский","флаг","uganda","ug","flag","ugandan","kampala")
+        m["\uD83C\uDDFE\uD83C\uDDEA"] = listOf("йемен","йеменский","флаг","yemen","ye","flag","yemeni","sanaa")
+        m["\uD83C\uDDF2\uD83C\uDDFF"] = listOf("мозамбик","флаг","mozambique","mz","flag")
+        m["\uD83C\uDDE8\uD83C\uDDF2"] = listOf("камерун","флаг","cameroon","cm","flag")
+        m["\uD83C\uDDE8\uD83C\uDDE9"] = listOf("конго","флаг","congo","cd","flag","drc","kinshasa")
+        m["\uD83C\uDDF8\uD83C\uDDF3"] = listOf("сенегал","флаг","senegal","sn","flag")
+        m["\uD83C\uDDF9\uD83C\uDDF3"] = listOf("тунис","тунисский","флаг","tunisia","tn","flag","tunisian","tunis")
+        m["\uD83C\uDDE9\uD83C\uDDFF"] = listOf("алжир","алжирский","флаг","algeria","dz","flag","algerian","algiers")
+        m["\uD83C\uDDF1\uD83C\uDDFE"] = listOf("ливия","ливийский","флаг","libya","ly","flag","libyan","tripoli")
+        m["\uD83C\uDDF8\uD83C\uDDE9"] = listOf("судан","суданский","флаг","sudan","sd","flag","sudanese","khartoum")
+        m["\uD83C\uDDF2\uD83C\uDDF2"] = listOf("мьянма","бирма","флаг","myanmar","burma","mm","flag")
+        m["\uD83C\uDDF1\uD83C\uDDE6"] = listOf("лаос","лаосский","флаг","laos","la","flag","lao","vientiane")
+        m["\uD83C\uDDF0\uD83C\uDDED"] = listOf("камбоджа","камбоджийский","флаг","cambodia","kh","flag","cambodian","phnom penh")
+        m["\uD83C\uDDF5\uD83C\uDDED"] = listOf("филиппины","филиппинский","флаг","philippines","ph","flag","filipino","manila")
+        m["\uD83C\uDDF1\uD83C\uDDF0"] = listOf("шри-ланка","ланкийский","флаг","sri lanka","lk","flag","lankan","colombo")
+        m["\uD83C\uDDF3\uD83C\uDDF5"] = listOf("непал","непальский","флаг","nepal","np","flag","nepali","kathmandu")
+        m["\uD83C\uDDE7\uD83C\uDDF9"] = listOf("бутан","флаг","bhutan","bt","flag","bhutanese","thimphu")
+        m["\uD83C\uDDF2\uD83C\uDDFB"] = listOf("мальдивы","мальдивский","флаг","maldives","mv","flag","maldivian","male")
+        m["\uD83C\uDDEB\uD83C\uDDEF"] = listOf("фиджи","фиджийский","флаг","fiji","fj","flag","fijian","suva")
+        m["\uD83C\uDDF5\uD83C\uDDEC"] = listOf("папуа","гвинея","флаг","papua new guinea","pg","flag")
+        m["\uD83C\uDDFC\uD83C\uDDF8"] = listOf("самоа","флаг","samoa","ws","flag")
+        m["\uD83C\uDDF9\uD83C\uDDF4"] = listOf("тонга","флаг","tonga","to","flag")
+        m["\uD83C\uDDF2\uD83C\uDDED"] = listOf("маршалловы","острова","флаг","marshall islands","mh","flag")
+        m["\uD83C\uDDF5\uD83C\uDDFC"] = listOf("палау","флаг","palau","pw","flag")
+        m["\uD83C\uDDEB\uD83C\uDDF2"] = listOf("микронезия","флаг","micronesia","fm","flag")
+        m["\uD83C\uDDF0\uD83C\uDDEE"] = listOf("кирибати","флаг","kiribati","ki","flag")
+        m["\uD83C\uDDF3\uD83C\uDDF7"] = listOf("науру","флаг","nauru","nr","flag")
+        m["\uD83C\uDDF9\uD83C\uDDFB"] = listOf("тувалу","флаг","tuvalu","tv","flag")
+        m["\uD83C\uDDFB\uD83C\uDDFA"] = listOf("вануату","флаг","vanuatu","vu","flag")
+        m["\uD83C\uDDF8\uD83C\uDDE7"] = listOf("соломоновы","острова","флаг","solomon islands","sb","flag")
+        m["\uD83C\uDDF3\uD83C\uDDFA"] = listOf("ниуэ","флаг","niue","nu","flag")
+        m["\uD83C\uDDE8\uD83C\uDDF0"] = listOf("острова кука","флаг","cook islands","ck","flag")
+        m["\uD83C\uDDF9\uD83C\uDDF0"] = listOf("токелау","флаг","tokelau","tk","flag")
+        m["\uD83C\uDDFC\uD83C\uDDEB"] = listOf("уоллис","футуна","флаг","wallis","futuna","wf","flag")
+        m["\uD83C\uDDE6\uD83C\uDDF8"] = listOf("американское самоа","флаг","american samoa","as","flag")
+        m["\uD83C\uDDEC\uD83C\uDDFA"] = listOf("гуам","флаг","guam","gu","flag")
+        m["\uD83C\uDDF2\uD83C\uDDF5"] = listOf("северные марианские","флаг","northern mariana","mp","flag")
+        m["\uD83C\uDDFB\uD83C\uDDEE"] = listOf("виргинские острова","флаг","virgin islands","vi","flag","us virgin")
+        m["\uD83C\uDDF5\uD83C\uDDEB"] = listOf("французская полинезия","флаг","french polynesia","pf","flag","tahiti")
+        m["\uD83C\uDDF3\uD83C\uDDE8"] = listOf("новая каледония","флаг","new caledonia","nc","flag")
+        m["\uD83D\uDEA9"] = listOf("флаг","треугольный","знамя","flag","triangular","banner","pennant")
+        m["\uD83C\uDFF3\uFE0F"] = listOf("флаг","белый","мир","white","flag","peace","surrender")
+        m["\uD83C\uDFF4"] = listOf("флаг","чёрный","пиратский","black","flag","pirate","waving")
+        m["\uD83C\uDFF3\uFE0F\u200D\uD83C\uDF08"] = listOf("радуга","лгбт","прайд","rainbow","flag","pride","lgbtq","gay")
+        m["\uD83C\uDFF4\u200D\u2620\uFE0F"] = listOf("пиратский","флаг","череп","pirate","flag","skull","jolly roger")
         return m
     }
 
@@ -1345,6 +1602,34 @@ class KeyboardView @JvmOverloads constructor(
                 "\uD83D\uDFE0","\uD83D\uDFE1","\uD83D\uDFE2","\uD83D\uDD35",
                 "\uD83D\uDFE3","\u26AB","\u26AA","\uD83D\uDFE4",
                 "\uD83D\uDD3A","\uD83D\uDD3B","\uD83D\uDD38","\uD83D\uDD39"
+            ),
+            /* ── Flags ── */
+            listOf(
+                "\uD83C\uDDF7\uD83C\uDDFA","\uD83C\uDDFA\uD83C\uDDF8","\uD83C\uDDEC\uD83C\uDDE7","\uD83C\uDDE9\uD83C\uDDEA",
+                "\uD83C\uDDEB\uD83C\uDDF7","\uD83C\uDDEE\uD83C\uDDF9","\uD83C\uDDEA\uD83C\uDDF8","\uD83C\uDDF5\uD83C\uDDF9",
+                "\uD83C\uDDE7\uD83C\uDDF7","\uD83C\uDDE8\uD83C\uDDF3","\uD83C\uDDEF\uD83C\uDDF5","\uD83C\uDDF0\uD83C\uDDF7",
+                "\uD83C\uDDEE\uD83C\uDDF3","\uD83C\uDDE6\uD83C\uDDEA","\uD83C\uDDF9\uD83C\uDDF7","\uD83C\uDDFA\uD83C\uDDE6",
+                "\uD83C\uDDE7\uD83C\uDDFE","\uD83C\uDDF0\uD83C\uDDFF","\uD83C\uDDFA\uD83C\uDDFF","\uD83C\uDDEC\uD83C\uDDEA",
+                "\uD83C\uDDE6\uD83C\uDDF2","\uD83C\uDDE6\uD83C\uDDFF","\uD83C\uDDF5\uD83C\uDDF1","\uD83C\uDDE8\uD83C\uDDE6",
+                "\uD83C\uDDE6\uD83C\uDDFA","\uD83C\uDDF2\uD83C\uDDFD","\uD83C\uDDE6\uD83C\uDDF7","\uD83C\uDDEE\uD83C\uDDF1",
+                "\uD83C\uDDF8\uD83C\uDDE6","\uD83C\uDDEA\uD83C\uDDEC","\uD83C\uDDF9\uD83C\uDDED","\uD83C\uDDFB\uD83C\uDDF3",
+                "\uD83C\uDDF3\uD83C\uDDF1","\uD83C\uDDE7\uD83C\uDDEA","\uD83C\uDDE8\uD83C\uDDED","\uD83C\uDDE6\uD83C\uDDF9",
+                "\uD83C\uDDF8\uD83C\uDDEA","\uD83C\uDDF3\uD83C\uDDF4","\uD83C\uDDE9\uD83C\uDDF0","\uD83C\uDDEB\uD83C\uDDEE",
+                "\uD83C\uDDEE\uD83C\uDDE9","\uD83C\uDDF3\uD83C\uDDFF","\uD83C\uDDEC\uD83C\uDDF7","\uD83C\uDDE8\uD83C\uDDFF",
+                "\uD83C\uDDF7\uD83C\uDDF4","\uD83C\uDDED\uD83C\uDDFA","\uD83C\uDDEE\uD83C\uDDEA","\uD83C\uDDF8\uD83C\uDDEC",
+                "\uD83C\uDDF2\uD83C\uDDFE","\uD83C\uDDF5\uD83C\uDDED","\uD83C\uDDE8\uD83C\uDDF1","\uD83C\uDDE8\uD83C\uDDF4",
+                "\uD83C\uDDF5\uD83C\uDDEA","\uD83C\uDDE8\uD83C\uDDFA","\uD83C\uDDF3\uD83C\uDDEC","\uD83C\uDDFF\uD83C\uDDE6",
+                "\uD83C\uDDF0\uD83C\uDDEA","\uD83C\uDDF2\uD83C\uDDE6","\uD83C\uDDF5\uD83C\uDDF0","\uD83C\uDDE7\uD83C\uDDE9",
+                "\uD83C\uDDEE\uD83C\uDDF6","\uD83C\uDDEE\uD83C\uDDF7","\uD83C\uDDF7\uD83C\uDDF8","\uD83C\uDDED\uD83C\uDDF7",
+                "\uD83C\uDDE7\uD83C\uDDEC","\uD83C\uDDF1\uD83C\uDDF9","\uD83C\uDDF1\uD83C\uDDFB","\uD83C\uDDEA\uD83C\uDDEA",
+                "\uD83C\uDDF2\uD83C\uDDE9","\uD83C\uDDF0\uD83C\uDDEC","\uD83C\uDDF9\uD83C\uDDEF","\uD83C\uDDF9\uD83C\uDDF2",
+                "\uD83C\uDDF2\uD83C\uDDF3","\uD83C\uDDEF\uD83C\uDDF4","\uD83C\uDDF1\uD83C\uDDE7","\uD83C\uDDF6\uD83C\uDDE6",
+                "\uD83C\uDDF0\uD83C\uDDFC","\uD83C\uDDE7\uD83C\uDDED","\uD83C\uDDF4\uD83C\uDDF2","\uD83C\uDDF8\uD83C\uDDFE",
+                "\uD83C\uDDE8\uD83C\uDDFE","\uD83C\uDDF2\uD83C\uDDF9","\uD83C\uDDEE\uD83C\uDDF8","\uD83C\uDDF8\uD83C\uDDF0",
+                "\uD83C\uDDF8\uD83C\uDDEE","\uD83C\uDDE6\uD83C\uDDF1","\uD83C\uDDF2\uD83C\uDDF0","\uD83C\uDDF2\uD83C\uDDEA",
+                "\uD83C\uDDE7\uD83C\uDDE6","\uD83C\uDDFD\uD83C\uDDF0","\uD83C\uDDED\uD83C\uDDF0","\uD83C\uDDF9\uD83C\uDDFC",
+                "\uD83D\uDEA9","\uD83C\uDFF3\uFE0F","\uD83C\uDFF4",
+                "\uD83C\uDFF3\uFE0F\u200D\uD83C\uDF08","\uD83C\uDFF4\u200D\u2620\uFE0F"
             )
         )
     }
@@ -1369,7 +1654,8 @@ class KeyboardView @JvmOverloads constructor(
     fun toggleLanguage() {
         isEnglishLayout = !isEnglishLayout
         isSymbolMode = false
-        if (isEmojiMode) hideEmojiPicker()
+        /* Don't close emoji picker if we're in emoji search mode */
+        if (isEmojiMode && !isEmojiSearchMode) hideEmojiPicker()
         applyLayout()
     }
 

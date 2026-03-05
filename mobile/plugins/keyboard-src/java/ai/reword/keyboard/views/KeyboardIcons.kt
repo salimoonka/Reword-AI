@@ -37,36 +37,40 @@ object KeyboardIcons {
         override fun getIntrinsicHeight() = sizePx
     }
 
-    /* -------- Microphone (voice input) -------- */
+    /* -------- Microphone (voice input) --------
+     * Tall vertically-stretched capsule (oval, NOT a circle) matching
+     * the standard iOS / Gboard microphone icon.  The capsule height
+     * is ~2.2× its width so it reads as a slender pill. */
     fun microphone(color: Int, sizePx: Int): Drawable = object : Drawable() {
-        private val p = strokePaint(color, sizePx * 0.08f)
+        private val p = strokePaint(color, sizePx * 0.07f)
 
         override fun draw(canvas: Canvas) {
             val s = bounds.width().toFloat().coerceAtMost(bounds.height().toFloat())
             val cx = bounds.exactCenterX(); val cy = bounds.exactCenterY()
 
-            // Mic head capsule — proper proportions matching iOS mic icon
-            val headW = s * 0.19f     // half-width of capsule
-            val headH = s * 0.34f     // full height of capsule
-            val headTop = cy - s * 0.30f
+            // ── Capsule (tall oval, ~2.5:1 aspect like iOS mic) ──
+            val capHalfW = s * 0.105f          // narrower
+            val capH     = s * 0.52f           // taller pill
+            val capTop   = cy - s * 0.38f
+            val capBot   = capTop + capH
+            val capRect  = RectF(cx - capHalfW, capTop, cx + capHalfW, capBot)
+            canvas.drawRoundRect(capRect, capHalfW, capHalfW, p)
 
-            val headRect = RectF(cx - headW, headTop, cx + headW, headTop + headH)
-            canvas.drawRoundRect(headRect, headW, headW, p)
-
-            // U-shaped holder arc — wider than head, cups lower half
-            val arcW = s * 0.30f
-            val arcTop = headTop + headH * 0.38f
-            val arcBottom = headTop + headH + s * 0.13f
-            val arcRect = RectF(cx - arcW, arcTop, cx + arcW, arcBottom)
+            // ── U-shaped holder arc ──
+            val arcHalfW = s * 0.22f
+            val arcTop   = capTop + capH * 0.40f
+            val arcBot   = capBot + s * 0.06f
+            val arcRect  = RectF(cx - arcHalfW, arcTop, cx + arcHalfW, arcBot)
             canvas.drawArc(arcRect, 0f, 180f, false, p)
 
-            // Stem
-            val stemBottom = arcBottom + s * 0.13f
-            canvas.drawLine(cx, arcBottom, cx, stemBottom, p)
+            // ── Stem ──
+            val stemTop = arcBot
+            val stemBot = stemTop + s * 0.10f
+            canvas.drawLine(cx, stemTop, cx, stemBot, p)
 
-            // Base
-            val baseHalf = s * 0.14f
-            canvas.drawLine(cx - baseHalf, stemBottom, cx + baseHalf, stemBottom, p)
+            // ── Base ──
+            val baseHalf = s * 0.11f
+            canvas.drawLine(cx - baseHalf, stemBot, cx + baseHalf, stemBot, p)
         }
 
         override fun setAlpha(a: Int) { p.alpha = a }
@@ -290,28 +294,27 @@ object KeyboardIcons {
         strokeJoin = Paint.Join.ROUND
     }
 
-    /* -------- Search magnifying glass (emoji search) -------- */
+    /* -------- Search magnifying glass (emoji search) --------
+     * Clean iOS-style: circle + handle at ~45°, thin stroke. */
     fun searchIcon(color: Int, sizePx: Int): Drawable = object : Drawable() {
-        private val p = strokePaint(color, sizePx * 0.08f)
+        private val p = strokePaint(color, sizePx * 0.10f)
 
         override fun draw(canvas: Canvas) {
             val s = bounds.width().toFloat().coerceAtMost(bounds.height().toFloat())
             val cx = bounds.exactCenterX(); val cy = bounds.exactCenterY()
 
-            val lensR = s * 0.26f
-            val lensCx = cx - s * 0.06f
-            val lensCy = cy - s * 0.06f
-
-            // Lens circle
+            // Lens — centred slightly up-left so the handle points to bottom-right
+            val lensR = s * 0.28f
+            val lensCx = cx - s * 0.05f
+            val lensCy = cy - s * 0.05f
             canvas.drawCircle(lensCx, lensCy, lensR, p)
 
-            // Handle (angled line from lower-right of circle)
-            val handleStart = lensR * 0.70f  // start at edge of circle (at 45°)
-            val handleLen = s * 0.22f
+            // Handle — starts at the circle edge at 45° and extends outward
             val cos45 = 0.707f
-            val sx = lensCx + handleStart * cos45
-            val sy = lensCy + handleStart * cos45
-            canvas.drawLine(sx, sy, sx + handleLen * cos45, sy + handleLen * cos45, p)
+            val hx0 = lensCx + lensR * cos45
+            val hy0 = lensCy + lensR * cos45
+            val hLen = s * 0.20f
+            canvas.drawLine(hx0, hy0, hx0 + hLen * cos45, hy0 + hLen * cos45, p)
         }
 
         override fun setAlpha(a: Int) { p.alpha = a }
