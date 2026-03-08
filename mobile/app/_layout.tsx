@@ -193,12 +193,14 @@ export default function RootLayout() {
         const { path } = Linking.parse(event.url);
         if (!path) return;
 
-        // Auth callbacks are now handled directly by WebBrowser.openAuthSessionAsync()
-        // in the sign-in screen (no deep link handling needed for OAuth)
+        // Auth callback deep links: When the website's app-complete page
+        // redirects back to the app via rewordai://auth/callback#access_token=...,
+        // route to the callback screen which extracts tokens and syncs the session.
         if (path.startsWith('auth/callback')) {
           if (__DEV__) {
-            console.log('[DeepLink] Auth callback URL — handled by WebBrowser, ignoring');
+            console.log('[DeepLink] Auth callback deep link — routing to callback screen');
           }
+          router.push('/auth/callback');
           return;
         }
 

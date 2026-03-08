@@ -18,8 +18,13 @@ port = 54323
 
 [auth]
 enabled = true
-site_url = "exp://localhost:8081" # For development with Expo
-additional_redirect_urls = ["reword-ai://auth/callback"]
+site_url = "https://reword-website.onrender.com" # Production website URL
+additional_redirect_urls = [
+  "rewordai://auth/callback",                                  # Mobile deep link (prod)
+  "https://reword-website.onrender.com/auth/app-complete",     # Mobile OAuth via website (prod)
+  "https://reword-website.onrender.com/auth/callback",         # Website OAuth callback (prod)
+  "exp://localhost:8081/--/auth/callback"                       # Expo dev deep link
+]
 
 [auth.email]
 enable_signup = true

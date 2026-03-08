@@ -120,12 +120,8 @@ export default function SignInScreen() {
   );
 
   const navigateAfterAuth = () => {
-    const { hasCompletedOnboarding } = useSettingsStore.getState();
-    if (hasCompletedOnboarding) {
-      router.replace('/(tabs)');
-    } else {
-      router.replace('/onboarding/welcome');
-    }
+    // Show the success screen first, which then auto-navigates to the proper destination
+    (router as any).replace('/auth/success');
   };
 
   /** Sign in with Google OAuth via in-app browser (expo-web-browser) */
@@ -136,15 +132,15 @@ export default function SignInScreen() {
       // Use the WEBSITE URL as redirect so:
       //  • Supabase can always redirect to a valid HTTPS origin
       //  • WebBrowser detects the navigation and auto-closes
-      // In dev we can fall back to the deep-link scheme, but production
-      // MUST use the website URL for reliable Chrome Custom Tab interception.
+      // With implicit flow (set in supabase client.ts), tokens arrive in the
+      // URL hash fragment (#access_token=...&refresh_token=...) rather than
+      // as a PKCE code — so no server-side exchange is needed.
       const WEBSITE_ORIGIN = 'https://reword-website.onrender.com';
       const redirectUrl = __DEV__
         ? Linking.createURL('auth/callback')         // exp://… scheme (dev)
         : `${WEBSITE_ORIGIN}/auth/app-complete`;     // HTTPS (prod)
 
       // WebBrowser monitors this URL prefix to know when to close.
-      // In production we use the same HTTPS URL so the browser reliably closes.
       const browserRedirectUrl = __DEV__
         ? redirectUrl
         : `${WEBSITE_ORIGIN}/auth/app-complete`;
@@ -234,25 +230,28 @@ export default function SignInScreen() {
         throw new Error('Не удалось получить токены авторизации');
       } else if (result.type === 'cancel' || result.type === 'dismiss') {
         // Browser closed — but auth may have completed via onAuthStateChange
-        // (Supabase sometimes redirects to the website instead of the app scheme,
-        //  so WebBrowser can't intercept the redirect and returns "cancel".)
+        // With implicit flow, the app-complete page on the website tries to
+        // redirect back to the app via deep link. The onAuthStateChange
+        // listener or the deep link handler may have already synced the session.
         if (__DEV__) console.log('[Auth] WebBrowser closed, checking if auth completed...');
 
-        // Give onAuthStateChange a moment to fire and sync the session
-        await new Promise((r) => setTimeout(r, 1500));
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session) {
-          if (__DEV__) console.log('[Auth] Session found after browser dismiss — syncing');
-          await syncSession(
-            session.access_token,
-            session.refresh_token,
-            session.user.id,
-            session.user.email ?? undefined,
-            session.user.user_metadata,
-          );
-          navigateAfterAuth();
-          return;
+        // Wait for onAuthStateChange or deep link handler to sync the session.
+        // Use longer timeout to account for slow networks / Render cold starts.
+        for (let attempt = 0; attempt < 4; attempt++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            if (__DEV__) console.log(`[Auth] Session found after browser dismiss (attempt ${attempt + 1})`);
+            await syncSession(
+              session.access_token,
+              session.refresh_token,
+              session.user.id,
+              session.user.email ?? undefined,
+              session.user.user_metadata,
+            );
+            navigateAfterAuth();
+            return;
+          }
         }
 
         if (__DEV__) console.log('[Auth] No session after cancel — user truly cancelled');

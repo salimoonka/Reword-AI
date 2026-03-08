@@ -68,15 +68,11 @@ export default function AuthCallbackScreen() {
     if (hasNavigated.current) return;
     hasNavigated.current = true;
 
-    const { hasCompletedOnboarding } = useSettingsStore.getState();
     const isAuth = authenticated ?? useUserStore.getState().isAuthenticated;
 
     if (isAuth) {
-      if (hasCompletedOnboarding) {
-        router.replace('/(tabs)');
-      } else {
-        router.replace('/onboarding/welcome');
-      }
+      // Show success screen first
+      (router as any).replace('/auth/success');
     } else {
       router.replace('/auth/sign-in');
     }

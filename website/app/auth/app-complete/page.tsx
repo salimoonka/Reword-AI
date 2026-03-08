@@ -7,27 +7,59 @@ import { useEffect, useState } from 'react';
  *
  * Shown when the mobile app's OAuth redirect lands on the website.
  * The browser is *supposed* to auto-close (via WebBrowser.openAuthSessionAsync
- * interception), but if it doesn't this page gives the user a beautiful
- * glassmorphism card explaining their account is synced and they should
- * return to the app.
+ * interception), but if it doesn't this page:
+ *
+ * 1. Extracts tokens from the URL hash fragment (#access_token=...&refresh_token=...)
+ * 2. Attempts to redirect back to the app via deep link (rewordai://auth/callback#...)
+ * 3. Falls back to a manual "return to app" message with a button
  *
  * Also attempts `window.close()` after a short delay.
  */
+
+const APP_SCHEME = 'rewordai';
+
 export default function AppCompletePage() {
   const [closing, setClosing] = useState(true);
+  const [deepLinkAttempted, setDeepLinkAttempted] = useState(false);
 
   useEffect(() => {
-    // Attempt to close the browser tab after a brief pause so the user
-    // can see the success state. Chrome Custom Tabs opened by the app
-    // are closeable with window.close().
+    // Extract hash fragment from the current URL (implicit OAuth tokens)
+    const hash = window.location.hash;
+    const hasTokens = hash && hash.includes('access_token');
+
+    // Step 1: Try to redirect to the mobile app via deep link with the tokens
+    if (hasTokens) {
+      // Build a deep link that passes the tokens back to the mobile app
+      const deepLinkUrl = `${APP_SCHEME}://auth/callback${hash}`;
+      try {
+        window.location.href = deepLinkUrl;
+        setDeepLinkAttempted(true);
+      } catch {
+        // Deep link failed — fall through to manual close
+      }
+    }
+
+    // Step 2: Try to close the browser tab (works for Chrome Custom Tabs)
     const timer = setTimeout(() => {
       window.close();
       // If still open after close attempt, show the manual message
       setTimeout(() => setClosing(false), 600);
-    }, 1200);
+    }, hasTokens ? 2000 : 1200);
 
     return () => clearTimeout(timer);
   }, []);
+
+  const handleReturnToApp = () => {
+    // Try deep link first, then fallback to window.close()
+    const hash = window.location.hash;
+    const hasTokens = hash && hash.includes('access_token');
+    if (hasTokens) {
+      window.location.href = `${APP_SCHEME}://auth/callback${hash}`;
+    } else {
+      window.location.href = `${APP_SCHEME}://`;
+    }
+    setTimeout(() => window.close(), 500);
+  };
 
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4">
@@ -74,7 +106,7 @@ export default function AppCompletePage() {
         {closing ? (
           <div className="mt-8 flex items-center justify-center gap-2 text-xs text-text-tertiary">
             <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-            Закрываю браузер…
+            Возвращаю в приложение…
           </div>
         ) : (
           <>
@@ -83,19 +115,21 @@ export default function AppCompletePage() {
                 Вернитесь в приложение Reword&nbsp;AI
               </p>
               <p className="mt-1 text-xs text-text-tertiary">
-                Закройте эту вкладку вручную
+                {deepLinkAttempted
+                  ? 'Если приложение не открылось, нажмите кнопку ниже'
+                  : 'Закройте эту вкладку вручную'}
               </p>
             </div>
 
             <button
-              onClick={() => window.close()}
+              onClick={handleReturnToApp}
               className="
                 mt-5 w-full rounded-xl gradient-accent
                 py-3 text-sm font-semibold text-white
                 transition-opacity hover:opacity-90
               "
             >
-              Закрыть вкладку
+              Открыть Reword AI
             </button>
           </>
         )}

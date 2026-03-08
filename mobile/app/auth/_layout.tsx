@@ -18,6 +18,7 @@ export default function AuthLayout() {
     >
       <Stack.Screen name="sign-in" />
       <Stack.Screen name="callback" />
+      <Stack.Screen name="success" options={{ animation: 'fade' }} />
     </Stack>
   );
 }

@@ -56,5 +56,6 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    flowType: 'implicit', // Must use implicit for mobile: PKCE code_verifier can't cross to website
   },
 });
