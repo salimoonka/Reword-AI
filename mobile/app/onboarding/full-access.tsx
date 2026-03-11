@@ -12,6 +12,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { spacing, typography } from '@/theme';
@@ -33,6 +34,7 @@ export default function FullAccessScreen() {
 
   return (
     <SafeAreaView style={s.container}>
+      <StatusBar style="light" />
       <ScrollView style={s.scroll} contentContainerStyle={s.content}>
         <View style={s.header}>
           <View style={s.iconContainer}>

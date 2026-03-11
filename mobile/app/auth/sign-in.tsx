@@ -143,21 +143,11 @@ export default function SignInScreen() {
     setLoading(true);
     setError(null);
     try {
-      // Use the WEBSITE URL as redirect so:
-      //  • Supabase can always redirect to a valid HTTPS origin
-      //  • WebBrowser detects the navigation and auto-closes
-      // With implicit flow (set in supabase client.ts), tokens arrive in the
-      // URL hash fragment (#access_token=...&refresh_token=...) rather than
-      // as a PKCE code — so no server-side exchange is needed.
-      const WEBSITE_ORIGIN = 'https://reword-website.onrender.com';
-      const redirectUrl = __DEV__
-        ? Linking.createURL('auth/callback')         // exp://… scheme (dev)
-        : `${WEBSITE_ORIGIN}/auth/app-complete`;     // HTTPS (prod)
-
-      // WebBrowser monitors this URL prefix to know when to close.
-      const browserRedirectUrl = __DEV__
-        ? redirectUrl
-        : `${WEBSITE_ORIGIN}/auth/app-complete`;
+      // Use the app's custom scheme (rewordai://auth/callback) as the redirect.
+      // With implicit flow, Supabase redirects with tokens in the hash fragment:
+      //   rewordai://auth/callback#access_token=...&refresh_token=...
+      // openAuthSessionAsync monitors this URL prefix and auto-closes the browser.
+      const redirectUrl = Linking.createURL('auth/callback');
 
       if (__DEV__) console.log('[Auth] OAuth redirectTo:', redirectUrl);
 
@@ -166,25 +156,24 @@ export default function SignInScreen() {
         options: {
           redirectTo: redirectUrl,
           queryParams: { prompt: 'select_account' },
-          skipBrowserRedirect: true, // We handle opening the URL ourselves
+          skipBrowserRedirect: true,
         },
       });
       if (oauthError) throw oauthError;
       if (!data?.url) throw new Error('No OAuth URL returned');
 
-      // Open in-app browser (Chrome Custom Tab / SFSafariViewController)
-      // This returns the redirect URL directly — no deep link handling needed
       const result = await WebBrowser.openAuthSessionAsync(
         data.url,
-        browserRedirectUrl,
+        redirectUrl,
         { showInRecents: true },
       );
 
       if (__DEV__) console.log('[Auth] WebBrowser result:', result.type);
 
       if (result.type === 'success' && result.url) {
-        // Extract tokens from the redirect URL hash fragment
         const url = result.url;
+
+        // Try implicit flow — tokens in hash fragment
         const hashIndex = url.indexOf('#');
         if (hashIndex !== -1) {
           const hash = url.substring(hashIndex + 1);
@@ -216,7 +205,7 @@ export default function SignInScreen() {
           }
         }
 
-        // Fallback: try PKCE code exchange
+        // Try PKCE code exchange
         const questionIndex = url.indexOf('?');
         if (questionIndex !== -1) {
           const query = url.substring(questionIndex + 1);
@@ -240,31 +229,17 @@ export default function SignInScreen() {
             }
           }
         }
-
-        // On Android, Chrome Custom Tabs may return 'success' but strip the
-        // hash fragment (tokens). Don't throw — fall through to session polling
-        // which will catch tokens arriving via deep link / onAuthStateChange.
-        if (__DEV__) console.log('[Auth] WebBrowser returned success without tokens, polling...');
       }
 
-      // For cancel/dismiss OR success-without-tokens:
-      // The app-complete page on the website fires a deep link back to the app
-      // (rewordai://auth/callback#tokens). The callback screen or onAuthStateChange
-      // will establish the session. Poll generously to account for:
-      //  - Render.com cold-start delay (up to 30s)
-      //  - Deep link processing time
-      //  - onAuthStateChange propagation
-      if (result.type !== 'success' || !hasNavigatedToSuccess.current) {
-        if (__DEV__) console.log('[Auth] Waiting for session via deep link / onAuthStateChange...');
+      // For cancel/dismiss or success-without-tokens:
+      // Poll Supabase session in case onAuthStateChange picks it up
+      if (!hasNavigatedToSuccess.current) {
+        if (__DEV__) console.log('[Auth] Polling for session...');
 
-        for (let attempt = 0; attempt < 15; attempt++) {
+        for (let attempt = 0; attempt < 10; attempt++) {
           await new Promise((r) => setTimeout(r, 1000));
 
-          // The isAuthenticated watcher or callback screen may have already navigated
-          if (hasNavigatedToSuccess.current) {
-            if (__DEV__) console.log(`[Auth] Already navigated to success (attempt ${attempt + 1})`);
-            return;
-          }
+          if (hasNavigatedToSuccess.current) return;
 
           const { data: { session } } = await supabase.auth.getSession();
           if (session) {
@@ -280,8 +255,6 @@ export default function SignInScreen() {
             return;
           }
         }
-
-        if (__DEV__) console.log('[Auth] No session after extended polling — user may have cancelled');
       }
     } catch (err: any) {
       console.error('[Auth] Google sign-in error:', err);

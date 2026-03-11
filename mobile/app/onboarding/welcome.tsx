@@ -13,6 +13,7 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
 import { spacing, typography } from '@/theme';
 import { darkColors } from '@/theme/colors';
@@ -46,11 +47,10 @@ export default function WelcomeScreen() {
 
   return (
     <SafeAreaView style={s.container}>
+      <StatusBar style="light" />
       <Animated.View style={[s.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         {/* Hero Section */}
         <View style={s.hero}>
-          <View style={s.illustration} />
-
           <Text style={s.title}>
             Пишите умнее{'\n'}на русском языке
           </Text>
@@ -131,13 +131,6 @@ function makeStyles(c: Colors) {
     hero: {
       alignItems: 'center',
       paddingTop: spacing.xxxl,
-    },
-    illustration: {
-      width: width * 0.6,
-      height: width * 0.4,
-      backgroundColor: c.background.secondary,
-      borderRadius: 16,
-      marginBottom: spacing.xl,
     },
     title: {
       ...typography.h1,

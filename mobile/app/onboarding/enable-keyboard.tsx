@@ -14,6 +14,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
 import { spacing, typography } from '@/theme';
 import { darkColors } from '@/theme/colors';
@@ -56,6 +57,7 @@ export default function EnableKeyboardScreen() {
 
   return (
     <SafeAreaView style={s.container}>
+      <StatusBar style="light" />
       <ScrollView style={s.scroll} contentContainerStyle={s.content}>
         <View style={s.header}>
           <Text style={s.title}>Включите клавиатуру</Text>
@@ -76,12 +78,6 @@ export default function EnableKeyboardScreen() {
           ))}
         </View>
 
-        {/* Image placeholder */}
-        <View style={s.imagePlaceholder}>
-          <Text style={s.imagePlaceholderText}>
-            📱 Скриншот настроек
-          </Text>
-        </View>
       </ScrollView>
 
       {/* Buttons */}
@@ -157,17 +153,6 @@ function makeStyles(c: Colors) {
       color: c.text.primary,
       flex: 1,
       paddingTop: spacing.xs,
-    },
-    imagePlaceholder: {
-      height: 200,
-      backgroundColor: c.background.secondary,
-      borderRadius: 12,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    imagePlaceholderText: {
-      ...typography.body,
-      color: c.text.tertiary,
     },
     buttons: {
       padding: spacing.xl,

@@ -8,7 +8,7 @@ import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Linking from 'expo-linking';
-import { useColorScheme, Alert, Appearance } from 'react-native';
+import { View, Text, StyleSheet, useColorScheme, Alert, Appearance, Animated } from 'react-native';
 import { ThemeProvider, DarkTheme, DefaultTheme } from '@react-navigation/native';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { useSubscriptionStore } from '@/stores/useSubscriptionStore';
@@ -56,6 +56,7 @@ export default function RootLayout() {
   const [authReady, setAuthReady] = useState(false);
   const iapInitialized = useRef(false);
   const hasNavigated = useRef(false);
+  const splashFade = useRef(new Animated.Value(1)).current;
 
   // Determine active theme
   const isDarkMode =
@@ -105,16 +106,18 @@ export default function RootLayout() {
   const themeColors = isDarkMode ? darkColors : lightColors;
 
   useEffect(() => {
-    // Hide splash screen only after auth state is determined
     if (authReady) {
+      // Hide native splash and fade out branded splash
       SplashScreen.hideAsync();
+      Animated.timing(splashFade, {
+        toValue: 0,
+        duration: 400,
+        useNativeDriver: true,
+      }).start();
 
-      // Only perform initial navigation once — subsequent auth changes
-      // (e.g. sign-in completing) are handled by the sign-in screen itself
       if (hasNavigated.current) return;
       hasNavigated.current = true;
 
-      // Navigate to the appropriate initial screen
       if (!isAuthenticated) {
         router.replace('/auth/sign-in');
       } else if (!hasCompletedOnboarding) {
@@ -284,6 +287,55 @@ export default function RootLayout() {
       </Stack>
     </ErrorBoundary>
     </ThemeProvider>
+    {/* Branded splash overlay — visible until auth is ready */}
+    {!authReady && (
+      <Animated.View style={[splashStyles.container, { opacity: splashFade }]}>
+        <View style={splashStyles.badge}>
+          <Text style={splashStyles.badgeIcon}>✦</Text>
+        </View>
+        <Text style={splashStyles.title}>Reword AI</Text>
+        <Text style={splashStyles.subtitle}>Умная клавиатура</Text>
+      </Animated.View>
+    )}
     </SafeAreaProvider>
   );
 }
+
+const splashStyles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#0D0D0D',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  badge: {
+    width: 88,
+    height: 88,
+    borderRadius: 26,
+    backgroundColor: '#9B6DFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: '#9B6DFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 30,
+    elevation: 16,
+  },
+  badgeIcon: {
+    fontSize: 44,
+    color: '#FFFFFF',
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#B3B3B3',
+    marginTop: 8,
+  },
+});
