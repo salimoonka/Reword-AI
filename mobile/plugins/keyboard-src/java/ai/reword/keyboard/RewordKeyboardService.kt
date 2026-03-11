@@ -85,6 +85,10 @@ class RewordKeyboardService :
             listener = this@RewordKeyboardService
             setMode(currentMode)
         }
+
+        // Style the IME navigation bar to match keyboard theme
+        applyNavigationBarTheme(keyboardView.isDarkTheme)
+
         return keyboardView
     }
 
@@ -106,6 +110,7 @@ class RewordKeyboardService :
                     setMode(currentMode)
                 }
                 setInputView(keyboardView)
+                applyNavigationBarTheme(currentIsDark)
             }
             keyboardView.reset()
         }
@@ -121,6 +126,7 @@ class RewordKeyboardService :
                     setMode(currentMode)
                 }
                 setInputView(keyboardView)
+                applyNavigationBarTheme(currentIsDark)
             }
         }
     }
@@ -402,6 +408,42 @@ class RewordKeyboardService :
             speechRecognizer?.stopListening()
         } catch (_: Exception) {}
         isListening = false
+    }
+
+    /**
+     * Set the IME window's navigation bar color and icon tint to match
+     * the keyboard theme so the small system strip below the keyboard
+     * (switch-keyboard icon, etc.) doesn't clash.
+     */
+    private fun applyNavigationBarTheme(isDark: Boolean) {
+        val w = window?.window ?: return
+        val navColor = if (isDark) 0xFF1C1C1E.toInt() else 0xFFD1D3D9.toInt()
+        w.navigationBarColor = navColor
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val controller = w.insetsController
+            if (isDark) {
+                // Dark bg → light (white) navigation icons
+                controller?.setSystemBarsAppearance(
+                    0,
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                )
+            } else {
+                // Light bg → dark navigation icons
+                controller?.setSystemBarsAppearance(
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                )
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            @Suppress("DEPRECATION")
+            val flags = w.decorView.systemUiVisibility
+            @Suppress("DEPRECATION")
+            w.decorView.systemUiVisibility = if (isDark) {
+                flags and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+            } else {
+                flags or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            }
+        }
     }
 
     /* SuggestionStripListener (legacy compat) */

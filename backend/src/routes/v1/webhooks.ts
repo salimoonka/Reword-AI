@@ -113,7 +113,15 @@ const webhooksRoute: FastifyPluginAsync = async (fastify) => {
         return reply.status(403).send({ error: 'Forbidden' });
       }
 
-      // 2. HMAC signature check (secondary defence, when secret is configured)
+      // 2. HMAC signature check (mandatory in production)
+      if (!secretKey && config.nodeEnv === 'production') {
+        logger.error({
+          event: 'yookassa_webhook_no_secret_key',
+          msg: 'YOOKASSA_SECRET_KEY is not configured — rejecting webhook',
+        });
+        return reply.status(500).send({ error: 'Webhook verification not configured' });
+      }
+
       if (secretKey) {
         const rawBody = JSON.stringify(request.body);
         if (!verifyYooKassaSignature(rawBody, signature, secretKey)) {

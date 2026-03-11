@@ -51,8 +51,10 @@ export default function SignInScreen() {
   const slideAnim = useRef(new Animated.Value(30)).current;
   const emailInputRef = useRef<TextInput>(null);
   const otpInputRef = useRef<TextInput>(null);
+  const hasNavigatedToSuccess = useRef(false);
 
   const { setTokens, setUser } = useUserStore();
+  const isAuthenticated = useUserStore((s) => s.isAuthenticated);
   const colorScheme = useColorScheme();
   const { themeMode } = useSettingsStore();
   const isDarkMode =
@@ -99,6 +101,16 @@ export default function SignInScreen() {
     };
   }, []);
 
+  // Watch for external auth completion (deep link callback, onAuthStateChange)
+  // This handles the case where WebBrowser returns cancel/dismiss but auth
+  // actually succeeded via deep link or background session sync.
+  useEffect(() => {
+    if (isAuthenticated && !hasNavigatedToSuccess.current) {
+      hasNavigatedToSuccess.current = true;
+      (router as any).replace('/auth/success');
+    }
+  }, [isAuthenticated]);
+
   const syncSession = useCallback(
     async (accessToken: string, refreshToken: string, userId: string, userEmail?: string, userMetadata?: Record<string, any>) => {
       await SecureStore.setItemAsync('access_token', accessToken);
@@ -120,6 +132,8 @@ export default function SignInScreen() {
   );
 
   const navigateAfterAuth = () => {
+    if (hasNavigatedToSuccess.current) return;
+    hasNavigatedToSuccess.current = true;
     // Show the success screen first, which then auto-navigates to the proper destination
     (router as any).replace('/auth/success');
   };
@@ -227,21 +241,34 @@ export default function SignInScreen() {
           }
         }
 
-        throw new Error('Не удалось получить токены авторизации');
-      } else if (result.type === 'cancel' || result.type === 'dismiss') {
-        // Browser closed — but auth may have completed via onAuthStateChange
-        // With implicit flow, the app-complete page on the website tries to
-        // redirect back to the app via deep link. The onAuthStateChange
-        // listener or the deep link handler may have already synced the session.
-        if (__DEV__) console.log('[Auth] WebBrowser closed, checking if auth completed...');
+        // On Android, Chrome Custom Tabs may return 'success' but strip the
+        // hash fragment (tokens). Don't throw — fall through to session polling
+        // which will catch tokens arriving via deep link / onAuthStateChange.
+        if (__DEV__) console.log('[Auth] WebBrowser returned success without tokens, polling...');
+      }
 
-        // Wait for onAuthStateChange or deep link handler to sync the session.
-        // Use longer timeout to account for slow networks / Render cold starts.
-        for (let attempt = 0; attempt < 4; attempt++) {
+      // For cancel/dismiss OR success-without-tokens:
+      // The app-complete page on the website fires a deep link back to the app
+      // (rewordai://auth/callback#tokens). The callback screen or onAuthStateChange
+      // will establish the session. Poll generously to account for:
+      //  - Render.com cold-start delay (up to 30s)
+      //  - Deep link processing time
+      //  - onAuthStateChange propagation
+      if (result.type !== 'success' || !hasNavigatedToSuccess.current) {
+        if (__DEV__) console.log('[Auth] Waiting for session via deep link / onAuthStateChange...');
+
+        for (let attempt = 0; attempt < 15; attempt++) {
           await new Promise((r) => setTimeout(r, 1000));
+
+          // The isAuthenticated watcher or callback screen may have already navigated
+          if (hasNavigatedToSuccess.current) {
+            if (__DEV__) console.log(`[Auth] Already navigated to success (attempt ${attempt + 1})`);
+            return;
+          }
+
           const { data: { session } } = await supabase.auth.getSession();
           if (session) {
-            if (__DEV__) console.log(`[Auth] Session found after browser dismiss (attempt ${attempt + 1})`);
+            if (__DEV__) console.log(`[Auth] Session found after polling (attempt ${attempt + 1})`);
             await syncSession(
               session.access_token,
               session.refresh_token,
@@ -254,7 +281,7 @@ export default function SignInScreen() {
           }
         }
 
-        if (__DEV__) console.log('[Auth] No session after cancel — user truly cancelled');
+        if (__DEV__) console.log('[Auth] No session after extended polling — user may have cancelled');
       }
     } catch (err: any) {
       console.error('[Auth] Google sign-in error:', err);

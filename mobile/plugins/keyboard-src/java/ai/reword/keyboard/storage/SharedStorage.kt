@@ -1,12 +1,14 @@
 /**
  * SharedStorage - SharedPreferences wrapper for sharing data between main app and keyboard service
- * Uses SharedPreferences with MODE_MULTI_PROCESS for cross-process access
+ * Uses EncryptedSharedPreferences for auth tokens, regular SharedPreferences for non-sensitive data.
  */
 
 package ai.reword.keyboard.storage
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -16,6 +18,7 @@ class SharedStorage private constructor(context: Context) {
     
     companion object {
         private const val PREFS_NAME = "reword_shared_prefs"
+        private const val SECURE_PREFS_NAME = "reword_secure_prefs"
         
         @Volatile
         private var instance: SharedStorage? = null
@@ -75,8 +78,54 @@ class SharedStorage private constructor(context: Context) {
         Context.MODE_PRIVATE
     )
     
+    private val securePrefs: SharedPreferences = try {
+        val masterKey = MasterKey.Builder(context)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        EncryptedSharedPreferences.create(
+            context,
+            SECURE_PREFS_NAME,
+            masterKey,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    } catch (e: Exception) {
+        // Fallback to regular prefs if encryption fails (should not happen)
+        context.getSharedPreferences(SECURE_PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
+    }
+    
+    init {
+        migrateTokensToSecurePrefs()
+    }
+    
+    /**
+     * One-time migration: move tokens from plain SharedPreferences to EncryptedSharedPreferences.
+     */
+    private fun migrateTokensToSecurePrefs() {
+        val migrationKey = "secure_prefs_migration_done_v1"
+        if (prefs.getBoolean(migrationKey, false)) return
+        
+        val token = prefs.getString(Keys.AUTH_TOKEN, null)
+        val refresh = prefs.getString(Keys.REFRESH_TOKEN, null)
+        val userId = prefs.getString(Keys.USER_ID, null)
+        
+        val editor = securePrefs.edit()
+        if (!token.isNullOrEmpty()) editor.putString(Keys.AUTH_TOKEN, token)
+        if (!refresh.isNullOrEmpty()) editor.putString(Keys.REFRESH_TOKEN, refresh)
+        if (!userId.isNullOrEmpty()) editor.putString(Keys.USER_ID, userId)
+        editor.apply()
+        
+        // Remove from plain prefs
+        prefs.edit()
+            .remove(Keys.AUTH_TOKEN)
+            .remove(Keys.REFRESH_TOKEN)
+            .remove(Keys.USER_ID)
+            .putBoolean(migrationKey, true)
+            .apply()
     }
     
     // MARK: - Authentication
@@ -89,12 +138,12 @@ class SharedStorage private constructor(context: Context) {
         set(value) = prefs.edit().putString(Keys.THEME_MODE, value).apply()
 
     var authToken: String?
-        get() = prefs.getString(Keys.AUTH_TOKEN, null)
-        set(value) = prefs.edit().putString(Keys.AUTH_TOKEN, value).apply()
+        get() = securePrefs.getString(Keys.AUTH_TOKEN, null)
+        set(value) = securePrefs.edit().putString(Keys.AUTH_TOKEN, value).apply()
     
     var refreshToken: String?
-        get() = prefs.getString(Keys.REFRESH_TOKEN, null)
-        set(value) = prefs.edit().putString(Keys.REFRESH_TOKEN, value).apply()
+        get() = securePrefs.getString(Keys.REFRESH_TOKEN, null)
+        set(value) = securePrefs.edit().putString(Keys.REFRESH_TOKEN, value).apply()
     
     var tokenExpiry: Date?
         get() {
@@ -104,8 +153,8 @@ class SharedStorage private constructor(context: Context) {
         set(value) = prefs.edit().putLong(Keys.TOKEN_EXPIRY, value?.time ?: 0).apply()
     
     var userId: String?
-        get() = prefs.getString(Keys.USER_ID, null)
-        set(value) = prefs.edit().putString(Keys.USER_ID, value).apply()
+        get() = securePrefs.getString(Keys.USER_ID, null)
+        set(value) = securePrefs.edit().putString(Keys.USER_ID, value).apply()
     
     val isAuthenticated: Boolean
         get() {
@@ -121,20 +170,24 @@ class SharedStorage private constructor(context: Context) {
         set(value) = prefs.edit().putString(Keys.API_BASE_URL, value).apply()
     
     fun setAuthData(token: String, refreshToken: String?, expiry: Date, userId: String) {
-        prefs.edit()
+        securePrefs.edit()
             .putString(Keys.AUTH_TOKEN, token)
             .putString(Keys.REFRESH_TOKEN, refreshToken)
-            .putLong(Keys.TOKEN_EXPIRY, expiry.time)
             .putString(Keys.USER_ID, userId)
+            .apply()
+        prefs.edit()
+            .putLong(Keys.TOKEN_EXPIRY, expiry.time)
             .apply()
     }
     
     fun clearAuthData() {
-        prefs.edit()
+        securePrefs.edit()
             .remove(Keys.AUTH_TOKEN)
             .remove(Keys.REFRESH_TOKEN)
-            .remove(Keys.TOKEN_EXPIRY)
             .remove(Keys.USER_ID)
+            .apply()
+        prefs.edit()
+            .remove(Keys.TOKEN_EXPIRY)
             .apply()
     }
     

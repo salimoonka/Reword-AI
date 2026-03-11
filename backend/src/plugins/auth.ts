@@ -7,6 +7,7 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { createHash } from 'crypto';
 import { supabaseAdmin, isSupabaseConfigured } from '../services/supabase/client.js';
 import logger from '../services/logging/logger.js';
 import config from '../config.js';
@@ -46,23 +47,31 @@ const tokenCache = new Map<string, { userId: string; email?: string; expiresAt: 
 const TOKEN_CACHE_MAX = 2000;
 const TOKEN_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
+/** Hash a JWT token with SHA-256 before using it as a cache key
+ *  so that raw tokens are never stored in memory. */
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
 function getCachedToken(token: string) {
-  const entry = tokenCache.get(token);
+  const key = hashToken(token);
+  const entry = tokenCache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) {
-    tokenCache.delete(token);
+    tokenCache.delete(key);
     return null;
   }
   return entry;
 }
 
 function setCachedToken(token: string, userId: string, email?: string) {
+  const key = hashToken(token);
   // Evict oldest entries when cache is full
   if (tokenCache.size >= TOKEN_CACHE_MAX) {
     const firstKey = tokenCache.keys().next().value;
     if (firstKey) tokenCache.delete(firstKey);
   }
-  tokenCache.set(token, {
+  tokenCache.set(key, {
     userId,
     email,
     expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,

@@ -151,8 +151,11 @@ apiClient.interceptors.response.use(
             }
 
             useUserStore.getState().setTokens(access_token, newRefreshToken || refreshToken);
-            onRefreshed(access_token);
+
+            // Reset flag BEFORE notifying subscribers — prevents queued
+            // retries from seeing isRefreshing=true and deadlocking
             isRefreshing = false;
+            onRefreshed(access_token);
 
             // Retry original request with new token
             if (originalRequest.headers) {
@@ -160,7 +163,7 @@ apiClient.interceptors.response.use(
             }
             return apiClient(originalRequest);
           } else {
-            // No refresh token — logout and reject queued requests
+            // No refresh token — reject queued requests and logout
             isRefreshing = false;
             const err = new Error('No refresh token');
             onRefreshFailed(err);
@@ -168,11 +171,12 @@ apiClient.interceptors.response.use(
             return Promise.reject(err);
           }
         } catch (refreshError) {
+          // Always reset flag and reject ALL pending subscribers
           isRefreshing = false;
           const err = refreshError instanceof Error ? refreshError : new Error('Token refresh failed');
           onRefreshFailed(err);
           useUserStore.getState().logout();
-          return Promise.reject(refreshError);
+          return Promise.reject(err);
         }
       } else {
         // Another refresh is in progress — queue this request

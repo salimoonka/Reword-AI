@@ -204,6 +204,19 @@ export default function RootLayout() {
           return;
         }
 
+        // All non-auth deep links require authentication
+        const authenticated = useUserStore.getState().isAuthenticated;
+        if (!authenticated) {
+          if (__DEV__) {
+            console.warn('[DeepLink] Blocked — user not authenticated, redirecting to sign-in');
+          }
+          router.replace('/auth/sign-in');
+          return;
+        }
+
+        // UUID v4 pattern for validating note IDs
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
         // Route known deep link paths
         if (path === 'settings') {
           router.push('/(tabs)/settings');
@@ -211,8 +224,10 @@ export default function RootLayout() {
           router.push('/subscription');
         } else if (path.startsWith('editor/')) {
           const noteId = path.replace('editor/', '');
-          if (noteId) {
+          if (noteId && UUID_RE.test(noteId)) {
             router.push(`/editor/${noteId}`);
+          } else if (__DEV__) {
+            console.warn('[DeepLink] Invalid noteId format:', noteId);
           }
         } else if (path === 'keyboard-setup') {
           router.push('/onboarding/enable-keyboard');

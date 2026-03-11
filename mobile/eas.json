@@ -7,7 +7,8 @@
     "base": {
       "env": {
         "EXPO_PUBLIC_API_URL": "https://reword-ai.onrender.com",
-        "EXPO_PUBLIC_SUPABASE_URL": "https://wlmfsohrvcxatgnwezfy.supabase.co"
+        "EXPO_PUBLIC_SUPABASE_URL": "https://wlmfsohrvcxatgnwezfy.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndsbWZzb2hydmN4YXRnbndlemZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzNjExMDEsImV4cCI6MjA4NjkzNzEwMX0.SDX9qdpqz2_vX9iN5hxqCR6BYF1LbMBQ7fxak3npLUo"
       }
     },
     "development": {

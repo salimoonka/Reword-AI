@@ -88,6 +88,13 @@ export const useSettingsStore = create<SettingsState>()(
     {
       name: 'reword-ai-settings',
       storage: createJSONStorage(() => AsyncStorage),
+      onRehydrateStorage: () => (state) => {
+        // Sync persisted theme to native SharedPreferences on every app startup
+        // so the keyboard service always has the correct theme_mode value
+        if (state?.themeMode) {
+          syncThemeModeToNative(state.themeMode);
+        }
+      },
     }
   )
 );

@@ -40,6 +40,13 @@ interface Config {
 
   // App Store / Google Play
   appleSharedSecret: string;
+  apple: {
+    issuerId: string;
+    keyId: string;
+    privateKey: string;
+    bundleId: string;
+    environment: 'Production' | 'Sandbox';
+  };
   googleServiceAccountKey: string;
 
   // YooKassa (for webhook verification)
@@ -74,7 +81,7 @@ export const config: Config = {
   host: getEnvOrDefault('HOST', '0.0.0.0'),
 
   supabase: {
-    url: getEnvRequired('SUPABASE_URL', 'https://wlmfsohrvcxatgnwezfy.supabase.co'),
+    url: getEnvRequired('SUPABASE_URL', ''),
     serviceKey: getEnvRequired('SUPABASE_SERVICE_KEY', ''),
     anonKey: getEnvOrDefault('SUPABASE_ANON_KEY', ''),
   },
@@ -97,6 +104,13 @@ export const config: Config = {
   freeParaphrasesLimit: parseInt(getEnvOrDefault('FREE_PARAPHRASES_LIMIT', '30'), 10),
 
   appleSharedSecret: getEnvOrDefault('APPLE_SHARED_SECRET', ''),
+  apple: {
+    issuerId: getEnvOrDefault('APPLE_ISSUER_ID', ''),
+    keyId: getEnvOrDefault('APPLE_KEY_ID', ''),
+    privateKey: getEnvOrDefault('APPLE_PRIVATE_KEY', ''),
+    bundleId: getEnvOrDefault('APPLE_BUNDLE_ID', 'ai.reword.app'),
+    environment: (getEnvOrDefault('APPLE_ENVIRONMENT', 'Sandbox') as 'Production' | 'Sandbox'),
+  },
   googleServiceAccountKey: getEnvOrDefault('GOOGLE_SERVICE_ACCOUNT_KEY', ''),
 
   yookassa: {

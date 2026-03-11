@@ -44,10 +44,10 @@ async function start() {
       credentials: true,
     });
 
-    // Rate limiting
+    // Rate limiting — use values from config (env-configurable)
     await fastify.register(rateLimit, {
-      max: 100,
-      timeWindow: '1 minute',
+      max: config.rateLimit.max,
+      timeWindow: config.rateLimit.windowMs,
       keyGenerator: (request) => {
         return request.userId || request.ip;
       },

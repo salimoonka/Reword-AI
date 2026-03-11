@@ -6,6 +6,7 @@ package ai.reword.keyboard.api
 
 import android.content.Context
 import ai.reword.keyboard.models.*
+import ai.reword.keyboard.storage.SharedStorage
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -16,29 +17,17 @@ import java.net.URL
 class APIService(private val context: Context) {
 
     private val gson = Gson()
+    private val storage by lazy { SharedStorage.getInstance(context) }
 
-    // Read from SharedPreferences — MUST match SharedStorage.PREFS_NAME
-    private val PREFS_NAME = "reword_shared_prefs"
-
-    // Read Supabase anon key from SharedPreferences (synced by the RN app)
-    // instead of hardcoding it in source code.
+    // Read Supabase anon key from SharedStorage (synced by the RN app)
     private val supabaseAnonKey: String
-        get() {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            return prefs.getString("supabase_anon_key", "") ?: ""
-        }
+        get() = storage.getValue("supabase_anon_key")?.toString() ?: ""
 
     private val baseURL: String
-        get() {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            return prefs.getString("api_base_url", "https://reword-ai.onrender.com") ?: "https://reword-ai.onrender.com"
-        }
+        get() = storage.apiBaseUrl
 
     private val authToken: String?
-        get() {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            return prefs.getString("auth_token", null)
-        }
+        get() = storage.authToken
 
     suspend fun paraphrase(text: String, mode: ParaphraseMode): ParaphraseResult {
         val token = authToken  // may be null — Edge Functions don't require JWT

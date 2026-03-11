@@ -18,6 +18,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.util.AttributeSet
 import android.view.Gravity
 import android.animation.ValueAnimator
@@ -66,24 +67,33 @@ class KeyboardView @JvmOverloads constructor(
     private var selectedEmojiCategory = 0  // 0 = frequent, 1..7 = data categories
 
     /* Theme detection — reads app preference from SharedPreferences.
-       For "auto", reads SYSTEM-LEVEL config (Resources.getSystem()) so the
-       result is not affected by Appearance.setColorScheme() overrides. */
+       For "auto", uses UiModeManager (immune to Appearance.setColorScheme()
+       overrides from React Native) as primary source, with Resources.getSystem()
+       as fallback. */
     val isDarkTheme: Boolean = detectDarkTheme(context)
 
     companion object {
         /** Detect dark theme from SharedPreferences + real system config. */
         fun detectDarkTheme(ctx: Context): Boolean {
-            val prefs = try {
-                ctx.getSharedPreferences("reword_shared_prefs", Context.MODE_MULTI_PROCESS)
-            } catch (_: Exception) {
-                ctx.getSharedPreferences("reword_shared_prefs", Context.MODE_PRIVATE)
-            }
+            val prefs = ctx.getSharedPreferences("reword_shared_prefs", Context.MODE_PRIVATE)
             return when (prefs.getString("theme_mode", "auto")) {
                 "dark"  -> true
                 "light" -> false
                 else    -> {
-                    /* "auto" — use system-global uiMode, not app-local config
-                       which may be overridden by Appearance.setColorScheme(). */
+                    /* "auto" — determine actual system dark mode.
+                       UiModeManager is the most reliable source: it reflects the
+                       device-level setting and is NOT affected by
+                       AppCompatDelegate.setDefaultNightMode() which React Native's
+                       Appearance.setColorScheme() calls under the hood. */
+                    val mgr = ctx.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager
+                    if (mgr != null) {
+                        when (mgr.nightMode) {
+                            android.app.UiModeManager.MODE_NIGHT_YES -> return true
+                            android.app.UiModeManager.MODE_NIGHT_NO -> return false
+                            // MODE_NIGHT_AUTO / MODE_NIGHT_CUSTOM — fall through to resource check
+                        }
+                    }
+                    /* Fallback: system-global resource config. */
                     val sysUiMode = android.content.res.Resources.getSystem().configuration.uiMode
                     (sysUiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
                 }
@@ -168,6 +178,15 @@ class KeyboardView @JvmOverloads constructor(
     init {
         orientation = VERTICAL
         setBackgroundColor(COL_BG)
+
+        /* Prevent Android's "Force Dark" (Q+) from inverting our manually-themed
+           keyboard colours. Without this, some devices/OEMs apply a dark filter
+           on top of our light-theme keys, making the keyboard appear dark even
+           when the system is in light mode. */
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            isForceDarkAllowed = false
+        }
+
         toolbar = buildToolbar()
         addView(toolbar)
         keysSection = LinearLayout(context).apply {
@@ -339,12 +358,20 @@ class KeyboardView @JvmOverloads constructor(
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(4), dp(16), dp(8))
 
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                isForceDarkAllowed = false
+            }
+
             /* Globe - language toggle (monochrome vector) */
             addView(ImageView(context).apply {
                 setImageDrawable(KeyboardIcons.globe(COL_TEXT, ICON_SIZE_BB))
+                setColorFilter(COL_TEXT, android.graphics.PorterDuff.Mode.SRC_IN)
                 scaleType = ImageView.ScaleType.CENTER
                 layoutParams = LayoutParams(dp(40), dp(40))
                 isClickable = true; isFocusable = true
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    isForceDarkAllowed = false
+                }
                 setOnClickListener { listener?.onLanguageToggle() }
             })
 
@@ -356,9 +383,13 @@ class KeyboardView @JvmOverloads constructor(
             /* Mic - voice input (monochrome vector) */
             addView(ImageView(context).apply {
                 setImageDrawable(KeyboardIcons.microphone(COL_TEXT, ICON_SIZE_BB))
+                setColorFilter(COL_TEXT, android.graphics.PorterDuff.Mode.SRC_IN)
                 scaleType = ImageView.ScaleType.CENTER
                 layoutParams = LayoutParams(dp(40), dp(40))
                 isClickable = true; isFocusable = true
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    isForceDarkAllowed = false
+                }
                 setOnClickListener { listener?.onVoiceInputPressed() }
             })
         }
